@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Offsite Filtering</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    canvas {
+      display: block;
+      margin: auto;
+      background: white;
+      width: 600px;
+    }
+    #chart-container, #localization-chart-container {
+      width: 100%;
+      margin: 10px 0px 0px 0px;
+    }
+    .device-label {
+      color: white;
+      text-align: center;
+      font-weight: bold;
+      padding: 2px 2px;
+      border-radius: 4px;
+      font-size: 18px;
+      white-space: nowrap;
+    }
+
+    .widget {
+      border: solid 1px rgba(0, 0, 0, 0.1);
+      border-radius: 0.4rem;
+      margin-top: 10px;
+      background-color: white;
+      padding: 5px;
+    box-sizing: border-box; /* Ensure padding is included in width */
+
+    }
+    .container {
+      max-width: 100%;
+      margin: auto;
+      padding: 16px 16px;
+    }
+    #chart, #localization-chart {
+      width: 100%;
+      height: 120px;
+      display: block;
+      margin: auto;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="widget">
+      <canvas id="plumeCanvas" width="590" height="330"></canvas>
+    </div>
+      <div id="chart-container" class="widget">
+        <canvas id="chart"></canvas>
+      </div>
+    <!-- Add this HTML below the existing line chart -->
+    <div id="localization-chart-container" class="widget">
+      <canvas id="localization-chart"></canvas>
+    </div>
+  </div>
+  <script>
+    const config = {
+      leakSources: [
+        { x: 50, y: 50, active: true },
+        { x: 300, y: 220, active: false }
+      ],
+      sensor: { cones: true },
+      sensors: [
+        { x: 180, y: 140, color: '#E7298A', id: 'A1' },
+        { x: 450, y: 180, color: '#E69F00', id: 'A2' },
+        { x: 240, y: 300, color: '#0072BC', id: 'A3' },
+        { x: 450, y: 300, color: '#117733', id: 'A4' }
+      ],
+      puff: {
+        emissionInterval: 2,
+        maxAge: 150,
+        sigmaBase: 4,
+        sigmaGrowth: 0.5,
+        startingConcentration: 1000000,
+        dispersionNoise: 0.1
+      },
+      wind: {
+        maxSpeed: 9.0,
+        baseSpeed: 3.0,
+        angleVariance: 0.8,
+        inertia: 0.98,
+        speedVariance: 0.4,
+        turbulence: 0.2,
+        meanderStrength: 0.2,
+        globalWindRandomWalk: 0,
+        sensorInfluenceRadius: 100,
+        panAmplitude: 0.2,
+        panPeriod: .5
+      },
+      grid: { spacing: 40 },
+      heatmap: { color: 'blue', intensity: 0.25, radiusMultiplier: 2.0 },
+      chart: { framerate: 20, historyLength: 40 },
+      sourceCycle: { source1On: 1, source2On: 1, off: 4 }
+    };
+
+    config.sensors.forEach(s => { s.history = []; });
+
+    const canvas = document.getElementById('plumeCanvas');
+    const ctx = canvas.getContext('2d');
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = canvas.width;
+    offscreenCanvas.height = canvas.height;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+    const chartCtx = document.getElementById('chart').getContext('2d');
+
+    let puffs = [];
+    let frameCount = 0;
+    let mouseX = canvas.width;
+    let mouseY = canvas.height;
+    let lastMouseMoveTime = 0;
+    let mouseArrowFadeDuration = 1000; // ms
+
+    let globalWindAngle = 0;  // radians
+    let globalWindSpeed = 0;
+
+    let windPanBaseAngle = 1.15* Math.PI;
+    globalWindAngle = windPanBaseAngle;
+    let sensorWindAngle = [windPanBaseAngle, windPanBaseAngle, windPanBaseAngle, windPanBaseAngle]; // radians
+    let sensorWindSpeed = [0, 0, 0, 0];
+
+    const sensorData = config.sensors.map(s => ({
+      label: s.id,
+      borderColor: s.color,
+      data: [],
+      fill: false
+    }));
+
+    const chart = new Chart(chartCtx, {
+      type: 'line',
+      data: {
+        labels: Array(100).fill(''),
+        datasets: sensorData
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          y: {
+            min: 0,
+            suggestedMax: 10,
+            title: { display: true, text: 'Concentration' }
+          },
+          x: { display: false }
+        }
+      }
+    });
+
+    // Track which leak source is hovered
+    let hoveredLeakSourceIndex = null;
+
+    // Mouse move handler for hover detection
+    canvas.addEventListener('mousemove', e => {      
+      const rect = canvas.getBoundingClientRect();
+      mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+      mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+      lastMouseMoveTime = Date.now();
+      resetGlobalWind();
+
+      // Check if mouse is over any leak source
+      hoveredLeakSourceIndex = null;
+      config.leakSources.forEach((source, idx) => {
+        const dx = mouseX - source.x;
+        const dy = mouseY - source.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 10) { // 10px threshold for hover
+          hoveredLeakSourceIndex = idx;
+        }
+      });
+    });
+
+    //resetGlobalWind();
+
+    globalWindSpeed = config.wind.baseSpeed;
+
+    function resetGlobalWind() {
+        // Calculate angle from center to mouse
+        const centerX = 0;//canvas.width / 2;
+        const centerY = 0;//canvas.height / 2;
+        const dx = mouseX - centerX+10;  // Changed to be consistent with atan2 convention
+        const dy = mouseY - centerY+10;   // Changed to be consistent with atan2 convention
+        
+        // Set global wind angle to point FROM mouse (wind source) TO center
+        const rawAngle = Math.atan2(dy, dx);
+        // Add π to make wind blow FROM mouse instead of TOWARDS it
+        globalWindAngle = (rawAngle + Math.PI + 2 * Math.PI) % (2 * Math.PI);
+        // Constrain globalWindAngle
+        const minAngle = 205 * (Math.PI / 180);
+        const maxAngle = 225 * (Math.PI / 180);
+        
+        // Normalize the angle to 0-2π range first
+        const normalizedAngle = (globalWindAngle + 2 * Math.PI) % (2 * Math.PI);
+        
+        // Check if the angle is outside the allowed range
+        if (normalizedAngle < minAngle || normalizedAngle > maxAngle) {
+            // Clamp to the nearest boundary
+            globalWindAngle = (normalizedAngle < minAngle) ? minAngle : maxAngle;
+        }
+        windPanBaseAngle = globalWindAngle; // Save as pan center
+        
+        // Optional: Set wind speed based on distance from center
+        const dist = Math.hypot(dx, dy);
+        // Scale wind speed based on distance from center, relative to baseSpeed
+        const distanceFactor = dist / 200;
+        globalWindSpeed = Math.min(config.wind.maxSpeed, config.wind.baseSpeed/2  + config.wind.baseSpeed * (distanceFactor));
+    }
+
+    function updateGlobalWind() {
+        // Sinusoidal pan for global wind angle
+        const panAmplitude = (config.wind.panAmplitude !== undefined) ? Number(config.wind.panAmplitude) : 0.3;
+        const panPeriod = (config.wind.panPeriod !== undefined) ? Number(config.wind.panPeriod) : 10;
+        const t = Date.now() / 1000;
+        globalWindAngle = (windPanBaseAngle + panAmplitude * Math.sin((2 * Math.PI * t) / panPeriod) + 2 * Math.PI) % (2 * Math.PI);
+
+        // Random walk for global wind speed
+        globalWindSpeed += (Math.random() - 0.5) * 0.02;
+        globalWindSpeed = Math.max(0.1, Math.min(config.wind.maxSpeed, globalWindSpeed));
+
+        // Update sensor wind values with random variations from global
+        for (let i = 0; i < config.sensors.length; i++) {
+            // Add random variation to angle with proper normalization
+            const angleVariation = (Math.random() - 0.5) * config.wind.angleVariance;
+            const targetAngle = (globalWindAngle + angleVariation + 2 * Math.PI) % (2 * Math.PI);
+            
+            // Use shortest path interpolation for angle
+            let angleDiff = targetAngle - sensorWindAngle[i];
+            if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+            if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+            
+            sensorWindAngle[i] = (sensorWindAngle[i] + angleDiff * (1 - config.wind.inertia) + 2 * Math.PI) % (2 * Math.PI);
+            
+            // Add random variation to speed
+            const speedVariation = (Math.random() - 0.5) * config.wind.speedVariance;
+            sensorWindSpeed[i] = Math.max(0.1, 
+                Math.min(config.wind.maxSpeed, 
+                    globalWindSpeed + speedVariation));
+        }
+    }
+
+    function getWindAt(x, y) {
+        // Calculate inverse distance weighted wind components
+        let totalWeight = 0;
+        let weightedDx = 0;
+        let weightedDy = 0;
+
+        // Loop through all sensors
+        for (let i = 0; i < config.sensors.length; i++) {
+            const sensor = config.sensors[i];
+            const dx = x - sensor.x;
+            const dy = y - sensor.y;
+            const dist = Math.hypot(dx, dy);
+            
+            // Exponential inverse distance weighting
+            const weight = Math.exp(-dist / 100); // Adjust 100 to change influence radius
+            totalWeight += weight;
+
+            // Convert angle and speed to vector components
+            const sensorDx = Math.cos(sensorWindAngle[i]) * sensorWindSpeed[i];
+            const sensorDy = Math.sin(sensorWindAngle[i]) * sensorWindSpeed[i];
+
+            // Add weighted contributions
+            weightedDx += sensorDx * weight;
+            weightedDy += sensorDy * weight;
+        }
+
+        // Normalize by total weight
+        if (totalWeight > 0) {
+            weightedDx /= totalWeight;
+            weightedDy /= totalWeight;
+        }
+
+        // Add small random variation
+        const magNoise = (Math.random() - 0.5) * 0.1;
+        const mag = Math.hypot(weightedDx, weightedDy) + magNoise;
+
+        return {
+            dx: weightedDx,
+            dy: weightedDy
+        };
+    }
+
+    function turboColormap(t) {
+        t = Math.max(0, Math.min(1, t));
+        const r = Math.round(34.61 + t * (1172.33 - t * (10793.56 - t * (33300.12 - t * (38394.49 - t * 14825.05)))));
+        const g = Math.round(23.31 + t * (557.33 + t * (1225.33 - t * (3574.96 - t * (1073.77 + t * 707.56)))));
+        const b = Math.round(27.2 + t * (3211.1 - t * (15327.97 - t * (27814 - t * (22569.18 - t * 6838.66)))));
+        return `rgb(${r % 256},${g % 256},${b % 256})`;
+    }
+
+    function drawArrow(x, y, dx, dy, color = 'white') {
+        // Normalize and scale the wind vector
+        const magnitude = Math.hypot(dx, dy);
+        if (magnitude === 0) return;  // Don't draw if no wind
+        
+        const scale = 15;
+        const normalizedDx = (dx / magnitude) * scale;
+        const normalizedDy = (dy / magnitude) * scale;
+        
+        const toX = x + normalizedDx;
+        const toY = y + normalizedDy;
+        const angle = Math.atan2(normalizedDy, normalizedDx);
+
+        // Draw the line
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(toX, toY);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Draw the arrowhead
+        const arrowSize = 5;
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX - arrowSize * Math.cos(angle - Math.PI / 6), toY - arrowSize * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(toX - arrowSize * Math.cos(angle + Math.PI / 6), toY - arrowSize * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    function drawWindCone(sensor, i) {
+        const angle = sensorWindAngle[i];  // Use the sensor's wind angle
+        const coneAngle = Math.PI / 18;     // 10 degrees = π/18 radians
+        
+        // Draw a cone pointing upwind (opposite to wind direction)
+        const startX = sensor.x;
+        const startY = sensor.y;
+        const length = 300;  // Length of the cone
+        
+        // Calculate the cone endpoints
+        const upwindAngle = angle + Math.PI;  // Point opposite to wind direction
+        const leftAngle = upwindAngle - coneAngle;
+        const rightAngle = upwindAngle + coneAngle;
+        
+        // Draw the cone
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(
+            startX + Math.cos(leftAngle + Math.PI) * length,
+            startY + Math.sin(leftAngle + Math.PI) * length
+        );
+        ctx.lineTo(
+            startX + Math.cos(rightAngle + Math.PI) * length,
+            startY + Math.sin(rightAngle + Math.PI) * length
+        );
+        ctx.closePath();
+        
+        // Style the cone using the sensor's color (with alpha)
+        ctx.fillStyle = hexToRgba(sensor.color, 0.12);
+        ctx.lineWidth = 1;
+        ctx.fill();
+    }
+
+    // Helper to convert hex color to rgba string
+    function hexToRgba(hex, alpha) {
+      // Remove # if present
+      hex = hex.replace('#', '');
+      let r = 0, g = 0, b = 0;
+      if (hex.length === 3) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+      } else if (hex.length === 6) {
+        r = parseInt(hex.substring(0,2), 16);
+        g = parseInt(hex.substring(2,4), 16);
+        b = parseInt(hex.substring(4,6), 16);
+      }
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function emitPuff() {
+      config.leakSources.forEach(source => {
+        if (source.active) {
+          puffs.push({
+            x: source.x + Math.random() * 4 - 2,
+            y: source.y + Math.random() * 4 - 2,
+            history: [],
+            age: 0,
+            sourceColor: source.color
+          });
+        }
+      });
+    }
+
+    function drawLeakSources() {
+      config.leakSources.forEach((source, idx) => {
+        ctx.beginPath();
+        let radius = 6;
+        if (idx === hoveredLeakSourceIndex) {
+          radius = 8;
+        } else if (source.active) {
+          radius = 8;
+        }
+        ctx.arc(source.x, source.y, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = 'black';
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Draw label above source if hovered
+        if (idx === hoveredLeakSourceIndex) {
+          const labelText = `Source ${idx + 1}`;
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textBaseline = 'bottom';
+          const textWidth = ctx.measureText(labelText).width;
+          const labelPaddingX = 8;
+          const labelPaddingY = 4;
+          const labelWidth = textWidth + labelPaddingX * 2;
+          const labelHeight = 20;
+          const labelX = source.x - labelWidth / 2;
+          const labelY = source.y - 16 - labelHeight; // 16px above the source dot
+
+          // Draw rounded rectangle background
+          ctx.save();
+          ctx.beginPath();
+          const radiusRect = 6;
+          ctx.moveTo(labelX + radiusRect, labelY);
+          ctx.lineTo(labelX + labelWidth - radiusRect, labelY);
+          ctx.quadraticCurveTo(labelX + labelWidth, labelY, labelX + labelWidth, labelY + radiusRect);
+          ctx.lineTo(labelX + labelWidth, labelY + labelHeight - radiusRect);
+          ctx.quadraticCurveTo(labelX + labelWidth, labelY + labelHeight, labelX + labelWidth - radiusRect, labelY + labelHeight);
+          ctx.lineTo(labelX + radiusRect, labelY + labelHeight);
+          ctx.quadraticCurveTo(labelX, labelY + labelHeight, labelX, labelY + labelHeight - radiusRect);
+          ctx.lineTo(labelX, labelY + radiusRect);
+          ctx.quadraticCurveTo(labelX, labelY, labelX + radiusRect, labelY);
+          ctx.closePath();
+          ctx.fillStyle = '#222';
+          ctx.globalAlpha = 0.95;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+
+          // Draw the label text
+          ctx.save();
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, source.x, labelY + labelHeight / 2);
+          ctx.restore();
+        }
+      });
+    }
+
+    // --- Automatic source cycling logic ---
+    let sourceCycleState = 0; // 0: source1 on, 1: off, 2: source2 on, 3: off
+    let lastCycleTime = Date.now();
+
+    function updateSourceCycle() {
+      const now = Date.now();
+      const elapsed = (now - lastCycleTime) / 1000; // seconds
+      let cycleDurations = {
+        source1On: 5,
+        source2On: 5,
+        off: 3
+      };
+      if (config.sourceCycle) {
+        cycleDurations = {
+          source1On: Number(config.sourceCycle.source1On) || 5,
+          source2On: Number(config.sourceCycle.source2On) || 5,
+          off: Number(config.sourceCycle.off) || 3
+        };
+      }
+
+      // 4-state cycle: 0 = source1 on, 1 = off, 2 = source2 on, 3 = off
+      let advance = false;
+      if (sourceCycleState === 0 && elapsed >= cycleDurations.source1On) advance = true;
+      if (sourceCycleState === 1 && elapsed >= cycleDurations.off) advance = true;
+      if (sourceCycleState === 2 && elapsed >= cycleDurations.source2On) advance = true;
+      if (sourceCycleState === 3 && elapsed >= cycleDurations.off) advance = true;
+
+      if (advance) {
+        sourceCycleState = (sourceCycleState + 1) % 4;
+        lastCycleTime = now;
+      }
+
+      // Set leakSources active flags
+      if (config.leakSources && config.leakSources.length >= 2) {
+        if (sourceCycleState === 0) {
+          config.leakSources[0].active = true;
+          config.leakSources[1].active = false;
+        } else if (sourceCycleState === 2) {
+          config.leakSources[0].active = false;
+          config.leakSources[1].active = true;
+        } else {
+          config.leakSources[0].active = false;
+          config.leakSources[1].active = false;
+        }
+        // If more than 2 sources, set others to inactive
+        for (let i = 2; i < config.leakSources.length; i++) {
+          config.leakSources[i].active = false;
+        }
+      }
+    }
+
+    function animate() {
+        updateGlobalWind();
+        updateSourceCycle();
+        
+        // Clear both canvases completely
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        
+        // Set the background color for main canvas
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Set the background for offscreen canvas (for puff rendering)
+        offscreenCtx.fillStyle = 'white';
+        offscreenCtx.fillRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+        if (frameCount % config.puff.emissionInterval === 0) emitPuff();
+        frameCount++;
+        let concentrations = config.sensors.map(() => 0);
+
+        puffs = puffs.filter(p => p.age < config.puff.maxAge);
+        for (const p of puffs) {
+          const wind = getWindAt(p.x, p.y);
+          
+          // Add random turbulent motion
+          const turbulence = config.wind.turbulence || 0.3;
+          const meanderStrength = config.wind.meanderStrength || 0.2;
+          
+          // Random walk component
+          const randomAngle = Math.random() * 2 * Math.PI;
+          const randomSpeed = Math.random() * turbulence;
+          
+          // Meandering component (slower variation)
+          const t = Date.now() * 0.001;
+          const meander = {
+              x: Math.sin(t * 0.5 + p.age * 0.1) * meanderStrength,
+              y: Math.cos(t * 0.7 + p.age * 0.1) * meanderStrength
+          };
+
+          // Update position with combined motion
+          p.x += -wind.dx * 1.5 + Math.cos(randomAngle) * randomSpeed + meander.x;
+          p.y += -wind.dy * 1.5 + Math.sin(randomAngle) * randomSpeed + meander.y;
+
+          // Add random variation to sigma (puff size)
+          const dispersionNoise = config.puff.dispersionNoise || 0.2;
+          const sigmaVariation = 1 + (Math.random() - 0.5) * dispersionNoise;
+          const sigma = (config.puff.sigmaBase + config.puff.sigmaGrowth * p.age) * sigmaVariation;
+
+          for (let i = 0; i < config.sensors.length; i++) {
+            const s = config.sensors[i];
+            const dx = p.x - s.x;
+            const dy = p.y - s.y;
+            const d2 = dx * dx + dy * dy;
+            const contrib = (config.puff.startingConcentration / (2 * Math.PI * sigma * sigma)) * Math.exp(-d2 / (2 * sigma * sigma));
+            concentrations[i] += contrib;
+          }
+
+          let gradient = offscreenCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, sigma * config.heatmap.radiusMultiplier);
+          if (config.heatmap.color === 'turbo') {
+            gradient.addColorStop(0, turboColormap(1.0));
+            gradient.addColorStop(0.2, turboColormap(0.8));
+            gradient.addColorStop(0.4, turboColormap(0.6));
+            gradient.addColorStop(0.6, turboColormap(0.4));
+            gradient.addColorStop(0.8, turboColormap(0.2));
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+          } else {
+              let colorValues;
+              switch(config.heatmap.color) {
+                case 'green': colorValues = '0,255,0'; break;
+                case 'blue': colorValues = '0,0,255'; break;
+                case 'red': colorValues = '255,0,0'; break;
+                default: colorValues = '0,255,0'; // default to green
+              }
+              gradient.addColorStop(0, `rgba(${colorValues},${config.heatmap.intensity})`);
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+          }
+
+          offscreenCtx.fillStyle = gradient;
+          offscreenCtx.beginPath();
+          offscreenCtx.arc(p.x, p.y, sigma * config.heatmap.radiusMultiplier, 0, 2 * Math.PI);
+          offscreenCtx.fill();
+          p.age++;
+        }
+
+        // Draw the offscreen canvas onto the main canvas
+        ctx.drawImage(offscreenCanvas, 0, 0);
+
+        // Draw wind arrows
+        for (let x = 0; x < canvas.width; x += config.grid.spacing) {
+            for (let y = 0; y < canvas.height; y += config.grid.spacing) {
+                const w = getWindAt(x, y);
+                drawArrow(x, y, -w.dx, -w.dy, 'grey');  // Flipped 180 degrees
+            }
+        }
+
+        config.sensors.forEach((s, i) => {
+          if (frameCount % Math.round(60/config.chart.framerate) === 0) {
+            s.history.push(concentrations[i]);
+            // Use config.chart.historyLength to control how much history is kept
+            const historyLength = config.chart.historyLength || 100; // Default to 100 if not specified
+            
+            // Update chart labels based on current history length
+            chart.data.labels = Array(s.history.length).fill('').map((_, i) => 
+              `-${((s.history.length - i) * (config.chart.framerate/60)).toFixed(1)}s`
+            );
+
+            if (s.history.length > historyLength) {
+              s.history.shift();
+              // Update chart labels for the fixed length
+              chart.data.labels = Array(historyLength).fill('').map((_, i) => 
+                `-${((historyLength - i) * (config.chart.framerate/60)).toFixed(1)}s`
+              );
+            }
+            chart.data.datasets[i].data = s.history;
+          }
+
+          // Draw the wind cone first (so it appears behind the sensor dot)
+          if (config.sensor.cones) {
+            drawWindCone(s, i);
+          }
+          // Draw remaining elements on the offscreen canvas
+            drawLeakSources();
+          
+          // Draw the sensor label above the sensor dot
+          const labelText = s.id;
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textBaseline = 'bottom';
+          const textWidth = ctx.measureText(labelText).width;
+          const labelPaddingX = 8;
+          const labelPaddingY = 4;
+          const labelWidth = textWidth + labelPaddingX * 2;
+          const labelHeight = 20;
+          const labelX = s.x - labelWidth / 2;
+          const labelY = s.y - 16 - labelHeight; // 16px above the sensor dot
+
+          // Draw rounded rectangle background
+          ctx.save();
+          ctx.beginPath();
+          const radius = 6;
+          ctx.moveTo(labelX + radius, labelY);
+          ctx.lineTo(labelX + labelWidth - radius, labelY);
+          ctx.quadraticCurveTo(labelX + labelWidth, labelY, labelX + labelWidth, labelY + radius);
+          ctx.lineTo(labelX + labelWidth, labelY + labelHeight - radius);
+          ctx.quadraticCurveTo(labelX + labelWidth, labelY + labelHeight, labelX + labelWidth - radius, labelY + labelHeight);
+          ctx.lineTo(labelX + radius, labelY + labelHeight);
+          ctx.quadraticCurveTo(labelX, labelY + labelHeight, labelX, labelY + labelHeight - radius);
+          ctx.lineTo(labelX, labelY + radius);
+          ctx.quadraticCurveTo(labelX, labelY, labelX + radius, labelY);
+          ctx.closePath();
+          ctx.fillStyle = s.color;
+          ctx.globalAlpha = 0.95;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+
+          // Draw the label text
+          ctx.save();
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, s.x, labelY + labelHeight / 2);
+          ctx.restore();
+
+          // Draw the sensor dot
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = s.color;
+          ctx.fill();
+        });
+
+        chart.update();
+        updateLocalizationScores();
+        requestAnimationFrame(animate);
+    }
+
+    const localizationChartCtx = document.getElementById('localization-chart').getContext('2d');
+
+    // Initialize localization scores for each leak source
+    let localizationScores = config.leakSources.map(() => ({
+        current: 0,
+        history: []
+    }));
+
+    // Create the bar chart
+    const localizationChart = new Chart(localizationChartCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Upwind', 'Downwind', 'Resultant Detection', 'Offsite Filtered'],
+            datasets: [{
+                label: 'Detection Count',
+                data: [0, 0, 0, 0], // Will be updated dynamically
+                backgroundColor: ['grey', 'grey', '#0072BC', '#E72929'],
+                borderColor: 'white',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 0 // Disable default animations for smoother updates
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: 10000,
+                    max: function(ctx) {
+                        // Always at least 40, but autoscale higher if needed
+                        const maxData = Math.max(...ctx.chart.data.datasets[0].data);
+                        return Math.max(10000, Math.ceil(maxData * 1.1));
+                    },
+                    title: { display: true, text: 'Count', color: 'white' },
+                    ticks: { display: false, color: 'grey' },
+                    grid: { color: 'rgba(255,255,255,0.1)' }
+                },
+                x: {
+                    ticks: {
+                        color: 'grey'
+                    },
+                    grid: { color: 'rgba(0,0,0,0.1)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false,
+                    labels: {
+                        color: 'grey'
+                    }
+                }
+            }
+        }
+    });
+
+function updateLocalizationScores() {
+    const historyLength = config.chart.historyLength || 100;
+    if (frameCount % Math.round(60/config.chart.framerate) === 0) {
+        // Get the latest concentration values
+        const upstreamValue = (config.sensors[0] && config.sensors[0].history.length > 0) ? config.sensors[0].history[config.sensors[0].history.length - 1] : 0;
+        let downstreamValue = 0;
+        for (let i = 1; i < config.sensors.length; i++) {
+            if (config.sensors[i].history.length > 0) {
+                downstreamValue += config.sensors[i].history[config.sensors[i].history.length - 1];
+            }
+        }
+
+        // Optionally, keep a running sum over historyLength frames
+        if (!window.upstreamHistory) window.upstreamHistory = [];
+        if (!window.downstreamHistory) window.downstreamHistory = [];
+        window.upstreamHistory.push(upstreamValue);
+        window.downstreamHistory.push(downstreamValue);
+        //Lengthened window of upstream detections for visual purposes
+        if (window.upstreamHistory.length > historyLength*1.6) window.upstreamHistory.shift();
+        if (window.downstreamHistory.length > historyLength) window.downstreamHistory.shift();
+
+        // Sum over the history (now actual concentrations)
+        const upstreamSum = window.upstreamHistory.reduce((a, b) => a + b, 0);
+        const downstreamSum = window.downstreamHistory.reduce((a, b) => a + b, 0);
+        const resultant = Math.max(0, downstreamSum - upstreamSum);
+        const offsiteFiltered = Math.max(0, upstreamSum - downstreamSum);
+
+        // Update the bar chart data with raw values
+        localizationChart.data.datasets[0].data = [upstreamSum, downstreamSum, resultant, offsiteFiltered];
+        localizationChart.update();
+    }
+}
+
+    animate();
+
+    window.addEventListener('resize', () => {
+        // Resize simulation canvas
+        const simCanvas = document.getElementById('plumeCanvas');
+        const simWidth = simCanvas.clientWidth;
+        const simHeight = simCanvas.clientHeight;
+        simCanvas.width = simWidth;
+        simCanvas.height = simHeight;
+        offscreenCanvas.width = simWidth;
+        offscreenCanvas.height = simHeight;
+
+        // Resize concentration chart
+        const chartContainer = document.getElementById('chart-container');
+        const chartCanvas = document.getElementById('chart');
+        console.log('Chart container size:', chartContainer.clientWidth, 'x', chartContainer.clientHeight);
+        chartCanvas.style.width = '100%';
+        chartCanvas.width = chartContainer.clientWidth;
+        chartCanvas.height = 120; // Fixed height as per CSS
+        chart.resize();
+
+        // Resize localization chart
+        const locContainer = document.getElementById('localization-chart-container');
+        const locCanvas = document.getElementById('localization-chart');
+        console.log('Localization container size:', locContainer.clientWidth, 'x', locContainer.clientHeight);
+        locCanvas.style.width = '100%';
+        locCanvas.width = locContainer.clientWidth;
+        locCanvas.height = 120; // Fixed height as per CSS
+        localizationChart.resize();
+
+    });
+  </script>
+</body>
+</html>
