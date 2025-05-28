@@ -1,6 +1,6 @@
 ---
 title: Localization
-sidebar_position: 2
+sidebar_position: 1
 ---
 
 After data is received from the onsite Qube devices, the first stage of the physics model is to detect any large variations from the baseline methane concentrations. The model uses those elevated readings in concert with the wind direction at that time to determine localization of the leak source.

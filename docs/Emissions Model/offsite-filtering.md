@@ -1,6 +1,6 @@
 ---
 title: Offsite Filtering
-sidebar_position: 3
+sidebar_position: 2
 ---
 How can the model differentiate between on site emission sources and other nearby methane producing sources?
 
