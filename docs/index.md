@@ -17,8 +17,6 @@ Continuous Emissions Monitoring (CEM) involves the use of fixed point sensors, o
 * By analyzing the concentration data from these sensors in conjunction with wind direction, it's possible to triangulate the specific location of the methane source.
 * By analyzing time periods where a sensor *should* see methane based on the wind direction but is not, it is possible to rule out specific potential sources.
 
-For more information about the localization algorithm, see [Localization](/localization).
-
 ### Quantification
 Quantifying a leak using point sensors can be done by modeling a methane plume as a gaussian distribution using:
 * Magnitude of the concentration spikes
