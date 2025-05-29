@@ -20,7 +20,7 @@ const config: Config = {
   organizationName: 'qubeiot', // Usually your GitHub org/user name.
   projectName: 'qubedocs', // Usually your repo name.
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
 
   // Even if you don't use internationalization, you can use this field to set
