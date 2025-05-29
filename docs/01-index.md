@@ -2,6 +2,7 @@
 id: index
 title: Introduction
 sidebar_position: 1
+slug: /
 ---
 
 ## What is Continuous Monitoring?
