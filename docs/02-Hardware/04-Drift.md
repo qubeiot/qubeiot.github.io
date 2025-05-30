@@ -6,6 +6,12 @@ Qube has developed a patent-pending auto-baselining algorithm to address the iss
 
 Baselining a device is essentially a form a field calibration or *zero-ing* that resets the devices to a known state, and revises a small subset of the calibration coefficients in a way that is known to maintain accuracy across the sensor's useable range.
 
+## Baselining Example
+
+The following figure shows real-world data from a Qube CH4 sensor that was deployed in the field for a little over 1 year. The data is superimposed with a co-located reference instrument (Los Gatos Analyzer) at Qube's Controlled Release Test Facility (CRTF). Measurements from the Qube sensor in green are shown to be elevated, until the automatic baseline routine identified the problem, and reset the coefficients to mitigate the drift.
+
+![Real world example of data from baselining](media/drift-4.jpeg)
+
 ## Response to aging
 
 The true calibration curve is represented by a complex combination of polynomials and exponentials, but let's consider the simplified example curve again that is just a line.
@@ -32,4 +38,13 @@ Qube tracks sensor health using baseline voltage, along with other response metr
 
 ## Validation
 
-The patent-pending baseline algorithm and monitoring techniques have been validated with lab and field testing. This is outlined in the following whitepaper: 
+The patent-pending baseline algorithm and monitoring techniques have been validated with lab and field testing. The process and results are described in this whitepaper:
+
+[**Long-Term Accuracy of Qube's Methane Sensor Calibration: A Two-Year Study** (pdf, 1.8 MB)](/pdf/Long-Term_Accuracy_of_Qube’s_Methane_Sensor_Calibration_A_Two-Year_Study.pdf)
+
+### Whitepaper Summary
+
+* Qube's metal oxide (MOx) sensors maintain consistent calibration and performance throughout a two-year operational period, demonstrating accuracy within 1 PPM for methane detection in industrial environments.
+* The company's patent-pending auto-baselining algorithm successfully compensates for sensor drift without human intervention, automatically adjusting to environmental changes and sensor aging to maintain accuracy.
+* Lab testing of 26 field-deployed sensors showed excellent accuracy, with error rates ranging from -7.64% to +1.36% across various methane concentrations (10-100 PPM), validating the robustness of the calibration process.
+* The study confirms that Qube's platform enables cost-effective, large-scale deployment for industrial methane monitoring, with customers typically achieving 50-90% reduction in emissions through early detection and process improvements.

@@ -7,3 +7,9 @@ Using the simplified example of a straight line, showing a slice of the multi-di
 ![Different Curves fit better for different regions](media/hi-temp.png)
 
 One particular case where sensor error can approach levels that would exceed the tight specification imposed, is climates with prolonged periods of extremely high temperature and high humidity. When planning a deployment, local weather data can be used to determine if conditions with relative humidity exceeding 90% accompanied with temperature  above 40°C is a common occurrence. If so, an alternative set of calibration coefficients can be remotely deployed to these devices in order to increase accuracy for these operating conditions.
+
+## Case Studies
+
+To see some examples of Qube hardware operating in extreme environments, take a look at this set of case studies here:
+
+* [Engineered for Extremes: How Qube’s Continuous Monitoring Devices Thrive in the Harshest Conditions](https://www.qubeiot.com/expert-insights/engineered-for-extremes)

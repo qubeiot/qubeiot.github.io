@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Swinging Door Compression</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    .canvas-container {
+      position: relative;
+      width: 600px;
+      margin: 0px 0px;
+    }
+    canvas { 
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      display: block; 
+      width: 100%;
+    }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+    }
+
+    #controls button {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      margin: 0 0px;
+      color: #666;
+      transition: color 0.2s;
+      display: none;  /* Hide all buttons by default */
+    }
+
+    #controls button.active {
+      display: inline-block;  /* Show only active button */
+    }
+
+    #controls button:hover {
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-container">
+    <canvas id="chart" width="600" height="200"></canvas>
+    <div id="controls">
+      <button id="playBtn" title="Play" class="active"><i class="fas fa-play"></i></button>
+      <button id="pauseBtn" title="Pause"><i class="fas fa-pause"></i></button>
+      <button id="resetBtn" title="Reset" class="active"><i class="fas fa-rotate"></i></button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    const data = [];
+    const tolerance = 5;
+
+    for (let i = 0; i < 60; i++) {
+      if (i < 20) data.push(Math.sin(i/2) * 2 + Math.random()*2);
+      else if (i < 30) data.push(100 + Math.random() * 30);
+      else if (i < 40) data.push(Math.sin(i/2) * 2 + Math.random()*2);
+      else if (i < 41) data.push(100 + Math.random() * 20);
+      else data.push(Math.sin(i/2) * 2 + Math.random());
+    }
+
+    let time = 0;
+    const maxTime = data.length;
+    let allPoints = [];
+    let compressed = [];
+    let upperSlope = Infinity;
+    let lowerSlope = -Infinity;
+
+    let running = false;
+    let started = false;
+    let timeoutHandle = null;
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      allPoints.forEach(pt => {
+        ctx.beginPath();
+        const dotSize = pt.animationSize || 4;
+        ctx.arc(pt.x, pt.y, dotSize, 0, 2 * Math.PI);
+        ctx.fillStyle = pt.keep ? 'red' : 'grey';
+        ctx.fill();
+      });
+
+      ctx.beginPath();
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      compressed.forEach((pt, i) => {
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+    }
+
+    function animatePoint(point) {
+      const maxSize = 12;
+      const duration = 1000;
+      const startTime = Date.now();
+
+      function animate() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < duration) {
+          const progress = elapsed / duration;
+          point.animationSize = progress < 0.5
+            ? 4 + (maxSize - 4) * (progress * 2)
+            : maxSize - (maxSize - 4) * ((progress - 0.5) * 2);
+          draw();
+          requestAnimationFrame(animate);
+        } else {
+          point.animationSize = 4;
+          point.keep = true;
+          draw();
+        }
+      }
+
+      animate();
+    }
+
+    function step() {
+      if (!running) return;
+
+      if (time >= maxTime) {
+        const lastPoint = allPoints[allPoints.length - 1];
+        if (lastPoint && !lastPoint.keep) {
+          lastPoint.keep = true;
+          compressed.push(lastPoint);
+        }
+        draw();
+        return;
+      }
+
+      const x = (time / maxTime) * width;
+      const y = height - 10 - data[time];
+      const pt = { x, y, index: time, keep: false };
+      allPoints.push(pt);
+
+      const lastKept = compressed[compressed.length - 1];
+      if (!lastKept) {
+        pt.keep = true;
+        compressed.push(pt);
+        upperSlope = Infinity;
+        lowerSlope = -Infinity;
+      } else {
+        const dt = time - lastKept.index;
+        const dy = data[time] - data[lastKept.index];
+        const slope = dt !== 0 ? dy / dt : 0;
+
+        upperSlope = Math.min(upperSlope, (dy + tolerance) / dt);
+        lowerSlope = Math.max(lowerSlope, (dy - tolerance) / dt);
+
+        if (upperSlope < lowerSlope) {
+          const prevPoint = allPoints[allPoints.length - 2];
+          if (prevPoint && !prevPoint.keep) {
+            prevPoint.keep = true;
+            compressed.push(prevPoint);
+            animatePoint(prevPoint);
+          }
+
+          pt.keep = true;
+          compressed.push(pt);
+          animatePoint(pt);
+
+          upperSlope = Infinity;
+          lowerSlope = -Infinity;
+
+          draw();
+          time++;
+          timeoutHandle = setTimeout(() => { if (running) step(); }, 1000);
+          return;
+        }
+      }
+
+      draw();
+      time++;
+      timeoutHandle = setTimeout(() => { if (running) step(); }, 100);
+    }
+
+    function reset() {
+      running = false;
+      clearTimeout(timeoutHandle);
+      time = 0;
+      allPoints = [];
+      compressed = [];
+      upperSlope = Infinity;
+      lowerSlope = -Infinity;
+      draw();
+    }
+
+    // Button Event Handlers
+    document.getElementById('playBtn').onclick = () => {
+      if (!running) {
+        running = true;
+        document.getElementById('playBtn').classList.remove('active');
+        document.getElementById('pauseBtn').classList.add('active');
+        step();
+      }
+    };
+
+    document.getElementById('pauseBtn').onclick = () => {
+      running = false;
+      clearTimeout(timeoutHandle);
+      document.getElementById('pauseBtn').classList.remove('active');
+      document.getElementById('playBtn').classList.add('active');
+    };
+
+    document.getElementById('resetBtn').onclick = () => {
+      reset();
+      document.getElementById('pauseBtn').classList.remove('active');
+      document.getElementById('playBtn').classList.add('active');
+      running = true;
+      document.getElementById('playBtn').classList.remove('active');
+      document.getElementById('pauseBtn').classList.add('active');
+      step();
+    };
+
+    // Lazy Start on Scroll into View
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !started) {
+        started = true;
+        running = true;
+        document.getElementById('playBtn').classList.remove('active');
+        document.getElementById('pauseBtn').classList.add('active');
+        step();
+      }
+    }, { threshold: 0.5 });
+
+    observer.observe(canvas);
+  </script>
+</body>
+</html>

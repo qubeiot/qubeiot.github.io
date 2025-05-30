@@ -28,6 +28,7 @@
   --ifm-color-primary-lighter: #99E0BB;
   --ifm-color-primary-lightest: #CCEFDD;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-link-color: #abd2df;
 }
 
 [data-theme='light'] .blog-list-page h2 {

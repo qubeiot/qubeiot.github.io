@@ -4,6 +4,9 @@ To achieve the highest possible accuracy, each Metal Oxide (MOX) sensor undergoe
 
 Calibration consists of exposing each sensor to known methane concentrations in a controlled environment and recording the corresponding voltage drop. This data forms the "calibration curve," which relates voltage output to methane concentration.
 
+To learn more about Qube's calibration process in detail, this article describes the laboratory setup in more detail:
+* [Validation of Qube Axon Ambient CH4 Concentration Readings](https://www.qubeiot.com/expert-insights/validaton-of-qube-ambient-ch4-concentration-readings)
+
 ## CH4 Concentration
 
 Below is an extremely simplified example. The true calibration curve is represented by a complex combination of polynomials and exponentials, but let's consider a calibration curve that is just a simple line. We will adjust a single variable: *CH4 concentration*, and monitor the resultant voltage:
@@ -30,10 +33,16 @@ What happens when we alter the other environmental conditions like humidity and 
 
 To map the full extent of the multidimensional surface accurately, the calibration process is repeated many times, varying both gas concentration and the environmental conditions all independently. This results in a unique set of calibration coefficients for each sensor which are applied and adjusted on the devices through our cloud IOT Platform, allowing accurate determination of methane concentration across a wide range of environmental conditions.
 
-## Validation
+## Accuracy
 
 Each sensor is lab calibrated to all expected ranges of operating conditions and gas concentrations, with an accuracy of 1 ppm or 1% of the reading, whichever is greater.
+
+The following image shows example laboratory data for a calibrated sensor:
+
+![Lab calibrated sensor data](media/calibration-4.png)
 
 While the lab calibration procedure confirms the sensor’s response to highly controlled steady-state concentration values, this level of performance is periodically validated in the field, by measuring real plumes of methane at a controlled release test facility west of Calgary.
 
 The field testing is intended to simulate an actual deployment and a typical emission profile a Qube device is expected to detect and measure. The sensors’ responses are compared against a high-quality reference, a Los Gatos Gas Analyzer (LGA), which is co-located during the test release campaign. The figure below shows an example of methane readings observed during a controlled release test with the two systems co-located:
+
+![Field calibration validation](media/calibration-5.png)
