@@ -9,7 +9,7 @@ Data-driven deployment tools can analyze site layouts, equipment locations, wind
 
 For more information on Qube's approach see this article:
 
-* [Qube’s Data Driven Approach to Optimizing Sensor Placement](https://www.qubeiot.com/expert-insights/optimized-device-placement)
+* [Qube’s Data Driven Approach to Optimizing Sensor Placement](https://www.qubeiot.com/expert-insights/methane-sensor-placement-optimization)
 
 ## Qube Emissions Dashboard
 The following article details practical strategies for verifying methane leaks and interrogating alarms produced by the platform, including three key verification techniques: **wind field visualizations**, **gas concentration roses**, and **emissions source heatmaps**. These tools can help operators confirm alarm accuracy before dispatching field teams, ultimately improving response efficiency and reducing false positives in methane leak detection workflows.
