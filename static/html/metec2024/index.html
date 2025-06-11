@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>METEC 2024 Dry Run Results</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 1200px;
+            margin: 0 auto 10px auto;
+            background-color: white;
+            padding: 20px 20px 0px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+        }
+        #dailyOverviewContainer {
+            position: relative;
+            height: 150px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        #chartContainer {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        #volumeChartContainer {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        #pieChartContainer {
+            position: relative;
+            height: 250px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+        }
+        #pieChart1, #pieChart2 {
+            position: relative;
+            width: 250px !important;
+            height: 250px !important;
+        }
+        #errorContainer {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        /* #pieChart1, #pieChart2 {
+            position: relative;
+            width: 200px;
+            height: 200px;
+        } */
+
+        .chart-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+            display: flex;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .chart-controls button {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+        }
+        .chart-controls button:hover:not(:disabled) {
+            background: #f0f0f0;
+            border-color: #ccc;
+        }
+        .chart-controls button:active:not(:disabled) {
+            background: #e0e0e0;
+        }
+        .chart-controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #f5f5f5;
+        }
+        .chart-controls button i {
+            font-size: 16px;
+            color: #666;
+        }
+        .chart-controls button:hover:not(:disabled) i {
+            color: #333;
+        }
+        .chart-controls button:disabled i {
+            color: #999;
+        }
+        .toggle-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 30px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #4CAF50;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+        .toggle-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+        .toggle-label.active {
+            color: #4CAF50;
+            font-weight: 600;
+        }
+        .statistics {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+        .stat-box {
+            padding: 10px;
+            margin: 0, auto;
+        }
+        .stat-box h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 16px;
+        }
+        .stat-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 150px;
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: row;
+            align-items: baseline;
+            gap: 10px;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            min-width: 80px;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        .histogram-container {
+            flex-grow: 1;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+            min-width: 500px;
+            display: flex;
+        }
+        
+        .histogram-container svg {
+            display: block;
+            margin: 0;
+        }
+        
+        .histogram-container rect {
+            transition: width 0.3s ease;
+        }
+        
+        .histogram-container text {
+            font-family: Arial, sans-serif;
+        }
+        .button-group {
+            display: flex;
+            gap: 2px;
+            background: #f0f0f0;
+            padding: 2px;
+            border-radius: 6px;
+            
+        }
+        
+        .view-button {
+            padding: 8px 16px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .view-button:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        
+        .view-button.active {
+            background: white;
+            color: #4CAF50;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+           margin-top: 4px;
+           margin-bottom: 4px;
+        }
+        .info-box {
+            display: flex;
+            align-items: flex-start;
+            padding: 16px 24px;
+            border-radius: 4px;
+            border-left: 6px solid #0288d1; /* Info color */
+            background: #e3f2fd;
+            color: #01579b;
+            font-family: 'Roboto', Arial, sans-serif;
+            position: relative;
+            margin: 16px 0;
+            box-shadow: 0 2px 8px rgba(2,136,209,0.08);
+        }
+        .info-icon {
+            margin-right: 16px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1>METEC 2024 Dry Run Results</h1>
+        <div id="loading">Loading data...</div>
+        <div id="dailyOverviewContainer">
+            <canvas id="dailyOverviewChart"></canvas>
+        </div>
+    </div>
+    <div class="container">
+        <div id="chartContainer">
+            <canvas id="timeSeriesChart"></canvas>
+            <div class="chart-controls">
+                <button id="prevDay" title="Previous Day" disabled><i class="fas fa-chevron-left"></i></button>
+                <button id="nextDay" title="Next Day" disabled><i class="fas fa-chevron-right"></i></button>
+                <button id="zoomIn" title="Zoom to One Day"><i class="fas fa-search-plus"></i></button>
+                <button id="resetZoom" title="Reset View"><i class="fas fa-undo"></i></button>
+            </div>
+            <div class="toggle-container">
+                <span id="hourlyLabel" class="toggle-label">1H</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="averageToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span id="dailyLabel" class="toggle-label active">24H</span>
+            </div>
+        </div>
+        <div id="volumeChartContainer">
+            <canvas id="volumeChart"></canvas>
+        </div>
+        <div id="pieChartContainer">
+            <canvas id="pieChart1"></canvas>
+            <canvas id="pieChart2"></canvas>
+        </div>
+
+    </div>
+    <div class="container">
+        <h3>Error Statistics</h3>
+        <div id="infoAlert" class="info-box" role="alert">
+            <span >To avoid overfitting to the specific time period of the dry run, we calculate error statistics for a smaller window size and slide it across the entire time period. Error values are calculated as the difference between the predicted and actual volumes for the given time period, calculated at every point during the dry run. Below, mean error is calculated and shown as a histogram. The window size can be adjusted to see how error changes over different time periods.</span>
+          </div>
+
+        <div class="statistics">
+            <div class="stat-box">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 id="errorTitle">Error Statistics (1-hour sliding window)</h3>
+                </div>
+                <div class="stat-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Max Error:</span>
+                        <span class="stat-value" id="maxError">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Mean Error:</span>
+                        <span class="stat-value" id="meanError">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Median Error:</span>
+                        <span class="stat-value" id="medianError">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="otherStats">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-box">
+                <h3>Hourly Volume Error Histogram</h3>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <label for="windowSizeSlider" style="font-size: 14px; color: #666;">Window Size:</label>
+                    <input type="range" id="windowSizeSlider" min="1" max="670" value="1" style="flex-grow: 1;">
+                    <span id="windowSizeLabel" style="font-size: 14px; color: #666; min-width: 60px;">1 hour</span>
+                </div>
+                <div id="errorHistogram" class="histogram-container"></div>
+            </div>
+        </div>
+        <div id="errorContainer">
+            <canvas id="errorChart"></canvas>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
