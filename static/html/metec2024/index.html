@@ -7,6 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -334,8 +335,28 @@
     </div>
     <div class="container">
         <h3>Error Statistics</h3>
+        <div class="stat-box">
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Total Volume Released:</span>
+                    <span class="stat-value" id="totalVolumeReleased"></span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Volume Predicted:</span>
+                    <span class="stat-value" id="totalVolumePredicted"></span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Error:</span>
+                    <span class="stat-value" id="totalError"></span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Error Percentage:</span>
+                    <span class="stat-value" id="totalErrorPercentage"></span>
+                </div>
+            </div>
+        </div>
         <div id="infoAlert" class="info-box" role="alert">
-            <span >To avoid overfitting to the specific time period of the dry run, we calculate error statistics for a smaller window size and slide it across the entire time period. Error values are calculated as the difference between the predicted and actual volumes for the given time period, calculated at every point during the dry run. Below, mean error is calculated and shown as a histogram. The window size can be adjusted to see how error changes over different time periods.</span>
+            <span >Comparing emission rates minute-to-minute can be misleading when ultimately we are interested in total quantification volumes. However, to avoid overfitting to the specific time period of the test, we calculate error for a smaller window size and slide it across the test period, tallying the error values for each time window. The difference between the predicted and actual volumes for every possible time window of that duration is calculated. These errors are shown below as a histogram. The window size can be adjusted to see how error drops over longer time periods. The line chart below shows mean error values as they drop for longer window sizes.</span>
           </div>
 
         <div class="statistics">
@@ -352,20 +373,13 @@
                         <span class="stat-label">Mean Error:</span>
                         <span class="stat-value" id="meanError">-</span>
                     </div>
-                    <div class="stat-item">
-                        <span class="stat-label">Median Error:</span>
-                        <span class="stat-value" id="medianError">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value" id="otherStats">-</span>
-                    </div>
                 </div>
             </div>
             <div class="stat-box">
-                <h3>Hourly Volume Error Histogram</h3>
+                <h3>Error Histogram for every Time Window</h3>
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
                     <label for="windowSizeSlider" style="font-size: 14px; color: #666;">Window Size:</label>
-                    <input type="range" id="windowSizeSlider" min="1" max="670" value="1" style="flex-grow: 1;">
+                    <input type="range" id="windowSizeSlider" min="1" max="504" value="1" style="flex-grow: 1;">
                     <span id="windowSizeLabel" style="font-size: 14px; color: #666; min-width: 60px;">1 hour</span>
                 </div>
                 <div id="errorHistogram" class="histogram-container"></div>

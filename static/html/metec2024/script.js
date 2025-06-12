@@ -388,27 +388,6 @@ function calculatePercentErrorByWindow() {
         }
     }
 
-    function calculateTotalPercentErrorByWindow(windowSize) {
-        let percentErrors = [];
-        let windowSizeMinutes = windowSize*60*24;
-        for (let i = 0; i <= hourlyErrors.length - windowSizeMinutes; i++) {
-            const window = hourlyErrors.slice(i, i + windowSizeMinutes);
-    
-            const totalActual = window.reduce((sum, d) => sum + d.actual, 0);
-            const totalPredicted = window.reduce((sum, d) => sum + d.predicted, 0);
-    
-            if (totalActual !== 0) {
-                const percentError = ((totalPredicted - totalActual) / totalActual) * 100;
-                percentErrors.push(Math.abs(percentError));
-            }
-        }
-    
-        // Average percent error over all sliding windows
-        return percentErrors.length > 0
-            ? percentErrors.reduce((a, b) => a + b, 0) / percentErrors.length
-            : NaN;
-    }
-
     function calculateTotalErrorByWindow(windowSize) {
         let totalErrors = [];
         let windowSizeMinutes = windowSize*60*24;
@@ -426,11 +405,6 @@ function calculatePercentErrorByWindow() {
             : NaN;
     }
 
-    const windowSizes = [1/24, 8/24, 1,2,3,4,5,6,7,14,21];
-    const percentErrorsByWindowSize = windowSizes.map(windowSize => ({
-        windowSize,
-        meanPercentError: calculateTotalErrorByWindow(windowSize)
-    }));
 
     // Update percent error chart
     if (errorChart) {
@@ -520,27 +494,12 @@ function calculateErrorStats(windowSize = 1) {
     const meanError = finalErrors.reduce((a, b) => Math.abs(a) + Math.abs(b), 0) / finalErrors.length;
     const maxPercentError = Math.max(...finalPercentErrors.map(Math.abs));
     const meanPercentError = finalPercentErrors.reduce((a, b) => Math.abs(a) + Math.abs(b), 0) / finalPercentErrors.length;
-    const sub1kgError = finalErrors.filter(error => Math.abs(error) < 1).length / finalErrors.length;
-    
-    // Calculate median error
-    const sortedErrors = [...finalErrors].sort((a, b) => a - b);
-    const medianError = sortedErrors.length % 2 === 0
-        ? (sortedErrors[sortedErrors.length / 2 - 1] + sortedErrors[sortedErrors.length / 2]) / 2
-        : sortedErrors[Math.floor(sortedErrors.length / 2)];
-    
-    const sortedPercentErrors = [...finalPercentErrors].sort((a, b) => a - b);
-    const medianPercentError = sortedPercentErrors.length % 2 === 0
-        ? (sortedPercentErrors[sortedPercentErrors.length / 2 - 1] + sortedPercentErrors[sortedPercentErrors.length / 2]) / 2
-        : sortedPercentErrors[Math.floor(sortedPercentErrors.length / 2)];
     
     const stats = {
         maxError,
         meanError,
-        medianError,
         maxPercentError,
         meanPercentError,
-        medianPercentError,
-        sub1kgError,
         windowSize
     };
     
@@ -554,14 +513,12 @@ function updateErrorStatsDisplay(stats) {
     const maxErrorElement = document.getElementById('maxError');
     const meanErrorElement = document.getElementById('meanError');
     const medianErrorElement = document.getElementById('medianError');
-    const otherStatsElement = document.getElementById('otherStats');
     const errorTitleElement = document.getElementById('errorTitle');
 
     if (maxErrorElement) maxErrorElement.textContent = `${stats.maxError.toFixed(2)} kg/h (${(stats.maxPercentError*100).toFixed(2)}%)`;
     if (meanErrorElement) meanErrorElement.textContent = `${stats.meanError.toFixed(2)} kg/h (${(stats.meanPercentError*100).toFixed(2)}%)`;
     if (medianErrorElement) medianErrorElement.textContent = `${stats.medianError.toFixed(2)} kg/h (${(stats.medianPercentError*100).toFixed(2)}%)`;
-    if (otherStatsElement) otherStatsElement.textContent = `Hours with error < 1 kg: ${(stats.sub1kgError*100).toFixed(2)}%`;
-    if (errorTitleElement) errorTitleElement.textContent = `Error Statistics (${stats.windowSize}-hour sliding window)`;
+    if (errorTitleElement) errorTitleElement.textContent = `Error: ${stats.windowSize}-hour sliding window`;
 }
 
 // Function to create and update error histogram
@@ -581,6 +538,9 @@ function createErrorHistogram(initialErrors) {
     function updateHistogram() {
         const windowSize = parseInt(windowSizeSlider.value);
         updateLabel();
+        
+        // Update the vertical line in the error chart
+        updateErrorChartLine(windowSize);
         
         // Calculate windowed errors and statistics using the refactored function
         const { errors: windowedErrors, stats } = calculateErrorStats(windowSize);
@@ -749,6 +709,23 @@ function createErrorChart() {
                             return `Window Size: ${context.label} days (${context.label*24} hours), Error: ${context.parsed.y.toFixed(2)} kg/h`;
                         }
                     }
+                },
+                annotation: {
+                    annotations: {
+                        line1: {
+                            type: 'line',
+                            xMin: 0,
+                            xMax: 0,
+                            borderColor: 'red',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                content: 'Current Window Size',
+                                enabled: true,
+                                position: 'top'
+                            }
+                        }
+                    }
                 }
             },
             scales: {
@@ -760,19 +737,14 @@ function createErrorChart() {
                     },
                     ticks: {
                         callback: function(value) {
-                            // Format the tick labels to show 1 decimal place
                             return value.toFixed(0);
                         },
-                        // Generate more ticks
                         stepSize: 1,
-                        // Ensure we show ticks at regular intervals
                         autoSkip: false,
-                        // Add minor ticks
                         minor: {
                             enabled: true
                         }
                     },
-                    // Add grid lines for better readability
                     grid: {
                         color: function(context) {
                             return context.tick.value % 1 === 0 ? '#ddd' : '#f5f5f5';
@@ -791,6 +763,16 @@ function createErrorChart() {
 
     // Calculate and update error data immediately
     calculateErrorByWindow();
+}
+
+// Function to update the vertical line position
+function updateErrorChartLine(windowSizeHours) {
+    if (!errorChart) return;
+    
+    const windowSizeDays = windowSizeHours / 24;
+    errorChart.options.plugins.annotation.annotations.line1.xMin = windowSizeDays;
+    errorChart.options.plugins.annotation.annotations.line1.xMax = windowSizeDays;
+    errorChart.update('none');
 }
 
 // Function to calculate error by window size
@@ -1384,6 +1366,28 @@ function createCharts() {
 
     // Create and update histogram
     createErrorHistogram(errors);
+
+    displayTotalError(errors);
+}
+
+// Function to calculate and display total volume error in kg, kg/h, and %
+function displayTotalError(errors) {
+    //Total volume is the last point in the volume dataset with "Ground Truth" in the label
+    const totalVolume = volumeDatasets.filter(dataset => dataset.label.includes('Ground Truth'))[volumeDatasets.filter(dataset => dataset.label.includes('Ground Truth')).length - 1].data[volumeDatasets.filter(dataset => dataset.label.includes('Ground Truth'))[volumeDatasets.filter(dataset => dataset.label.includes('Ground Truth')).length - 1].data.length - 1].y;
+    const totalVolumePerHour = totalVolume / (errors.length);
+    const totalQubeVolume = Math.abs(volumeDatasets.filter(dataset => dataset.label.includes('Qube'))[volumeDatasets.filter(dataset => dataset.label.includes('Qube')).length - 1].data[volumeDatasets.filter(dataset => dataset.label.includes('Qube'))[volumeDatasets.filter(dataset => dataset.label.includes('Qube')).length - 1].data.length - 1].y);
+    const totalQubeVolumePerHour = totalQubeVolume / (errors.length);
+    const totalError = Math.abs(errors.reduce((sum, error) => sum + error, 0));
+    const totalErrorPerHour = totalError / (errors.length);
+    const totalErrorPercentage = (totalError / totalVolume) * 100;
+    const totalVolumeReleasedElement = document.getElementById('totalVolumeReleased');
+    const totalVolumePredictedElement = document.getElementById('totalVolumePredicted');
+    const totalErrorElement = document.getElementById('totalError');
+    const totalErrorPercentageElement = document.getElementById('totalErrorPercentage');
+    totalVolumeReleasedElement.textContent = `${totalVolume.toFixed(2)} kg (${totalVolumePerHour.toFixed(2)} kg/h)`;
+    totalVolumePredictedElement.textContent = `${totalQubeVolume.toFixed(2)} kg (${totalQubeVolumePerHour.toFixed(2)} kg/h)`;
+    totalErrorElement.textContent = `${totalError.toFixed(2)} kg (${totalErrorPerHour.toFixed(2)} kg/h)`;
+    totalErrorPercentageElement.textContent = `${totalErrorPercentage.toFixed(2)}%`;
 }
 
 // Function to update volume chart based on current zoom level
