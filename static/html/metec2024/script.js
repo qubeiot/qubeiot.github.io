@@ -1,7 +1,7 @@
 let chart = null; // Store rate chart instance globally
 let volumeChart = null; // Store volume chart instance globally
-let pieChart1 = null; // Store first pie chart instance
-let pieChart2 = null; // Store second pie chart instance
+let pieChart1 = null; // Store first bar chart instance
+let pieChart2 = null; // Store second bar chart instance
 let dailyOverviewChart = null; // Store daily overview chart instance
 let errorChart = null; // Store error chart instance
 let minuteAveragedDatasets = []; // Store 1-minute averaged datasets
@@ -123,7 +123,7 @@ function getConsistentColors(labels) {
     return labels.map(label => getSourceColor(label));
 }
 
-// Function to update pie charts based on current zoom level
+// Function to update bar charts based on current zoom level
 function updatePieCharts() {
     if (!chart || !pieChart1 || !pieChart2) return;
     
@@ -163,29 +163,40 @@ function updatePieCharts() {
         }
     }
     
-    // Update pie charts with consistent colors
-    updatePieChart(pieChart1, sourceVolumes1, 'Ground Truth Emissions');
-    updatePieChart(pieChart2, sourceVolumes2, 'Qube');
-}
-
-// Function to update a single pie chart
-function updatePieChart(pieChart, sourceVolumes, title) {
-    // Sort the source IDs
-    const sortedLabels = Object.keys(sourceVolumes).sort();
-    const data = sortedLabels.map(label => sourceVolumes[label]);
-    const backgroundColors = sortedLabels.map(sourceId => getSourceColor(sourceId));
+    // Initialize color mapping for all sources
+    const allSources = new Set([
+        ...Object.keys(sourceVolumes1),
+        ...Object.keys(sourceVolumes2)
+    ]);
     
-    pieChart.data.labels = sortedLabels;
-    pieChart.data.datasets[0].data = data;
-    pieChart.data.datasets[0].backgroundColor = backgroundColors;
-    pieChart.options.plugins.title.text = title;
-
-    // ✅ Properly set the legend position (for Chart.js v3+)
-    pieChart.options.plugins.legend.position = 'right';
-
-    pieChart.update('none');
+    sourceColorMapping = {};
+    Array.from(allSources).forEach(sourceId => {
+        getSourceColor(sourceId);
+    });
+    
+    // Sort sources: Ground Truth sources by volume (largest to smallest), then Qube-only sources
+    const groundTruthSources = Object.keys(sourceVolumes1).sort((a, b) => sourceVolumes1[b] - sourceVolumes1[a]);
+    const qubeOnlySources = Object.keys(sourceVolumes2).filter(sourceId => !sourceVolumes1[sourceId]);
+    const sortedSources = [...groundTruthSources, ...qubeOnlySources];
+    
+    // Update bar charts with consistent colors and order
+    updateBarChart(pieChart1, sourceVolumes1, 'Ground Truth Emissions', sortedSources);
+    updateBarChart(pieChart2, sourceVolumes2, 'Qube', sortedSources);
 }
 
+// Function to update a single bar chart
+function updateBarChart(barChart, sourceVolumes, title, sortedSources) {
+    // Use the sorted sources order (from Ground Truth) for both charts
+    const data = sortedSources.map(sourceId => sourceVolumes[sourceId] || 0);
+    const backgroundColors = sortedSources.map(sourceId => getSourceColor(sourceId));
+    
+    barChart.data.labels = sortedSources;
+    barChart.data.datasets[0].data = data;
+    barChart.data.datasets[0].backgroundColor = backgroundColors;
+    barChart.options.plugins.title.text = title;
+
+    barChart.update('none');
+}
 
 // Function to get color based on dataset name
 function getDatasetColor(fileName) {
@@ -495,11 +506,20 @@ function calculateErrorStats(windowSize = 1) {
     const maxPercentError = Math.max(...finalPercentErrors.map(Math.abs));
     const meanPercentError = finalPercentErrors.reduce((a, b) => Math.abs(a) + Math.abs(b), 0) / finalPercentErrors.length;
     
+    // Calculate standard deviations
+    const meanErrorValue = finalErrors.reduce((a, b) => a + b, 0) / finalErrors.length;
+    const stdDevError = Math.sqrt(finalErrors.reduce((sum, error) => sum + Math.pow(error - meanErrorValue, 2), 0) / finalErrors.length);
+    
+    const meanPercentErrorValue = finalPercentErrors.reduce((a, b) => a + b, 0) / finalPercentErrors.length;
+    const stdDevPercentError = Math.sqrt(finalPercentErrors.reduce((sum, error) => sum + Math.pow(error - meanPercentErrorValue, 2), 0) / finalPercentErrors.length);
+    
     const stats = {
         maxError,
         meanError,
         maxPercentError,
         meanPercentError,
+        stdDevError,
+        stdDevPercentError,
         windowSize
     };
     
@@ -512,12 +532,12 @@ function updateErrorStatsDisplay(stats) {
     
     const maxErrorElement = document.getElementById('maxError');
     const meanErrorElement = document.getElementById('meanError');
-    const medianErrorElement = document.getElementById('medianError');
+    const stdDevErrorElement = document.getElementById('stdDevError');
     const errorTitleElement = document.getElementById('errorTitle');
 
     if (maxErrorElement) maxErrorElement.textContent = `${stats.maxError.toFixed(2)} kg/h (${(stats.maxPercentError*100).toFixed(2)}%)`;
     if (meanErrorElement) meanErrorElement.textContent = `${stats.meanError.toFixed(2)} kg/h (${(stats.meanPercentError*100).toFixed(2)}%)`;
-    if (medianErrorElement) medianErrorElement.textContent = `${stats.medianError.toFixed(2)} kg/h (${(stats.medianPercentError*100).toFixed(2)}%)`;
+    if (stdDevErrorElement) stdDevErrorElement.textContent = `${stats.stdDevError.toFixed(2)} kg/h (${(stats.stdDevPercentError*100).toFixed(2)}%)`;
     if (errorTitleElement) errorTitleElement.textContent = `Error: ${stats.windowSize}-hour sliding window`;
 }
 
@@ -866,8 +886,8 @@ function createDailyOverviewChart() {
         backgroundColor: getDatasetColor(fileName),
         originalColor: getDatasetColor(fileName),
         borderWidth: 0,
-        barPercentage: 0.8,
-        categoryPercentage: 0.75
+        barPercentage: 0.6,
+        categoryPercentage: 0.8
     }));
     
     dailyOverviewChart = new Chart(overviewCtx, {
@@ -1153,7 +1173,7 @@ function createVolumeChart() {
     });
 }
 
-// Function to create pie charts
+// Function to create bar charts
 function createPieCharts() {
     const pieCtx1 = getElement('pieChart1')?.getContext('2d');
     const pieCtx2 = getElement('pieChart2')?.getContext('2d');
@@ -1208,8 +1228,13 @@ function createPieCharts() {
         getSourceColor(sourceId);
     });
     
-    const pieChartConfig = {
-        type: 'pie',
+    // Sort sources: Ground Truth sources by volume (largest to smallest), then Qube-only sources
+    const groundTruthSources = Object.keys(sourceVolumes1).sort((a, b) => sourceVolumes1[b] - sourceVolumes1[a]);
+    const qubeOnlySources = Object.keys(sourceVolumes2).filter(sourceId => !sourceVolumes1[sourceId]);
+    const sortedSources = [...groundTruthSources, ...qubeOnlySources];
+    
+    const barChartConfig = {
+        type: 'bar',
         data: {
             labels: [],
             datasets: [{
@@ -1219,7 +1244,48 @@ function createPieCharts() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y', // Make it horizontal
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Volume (kg)'
+                    },
+                    ticks: {
+                        font: {
+                            size: 12
+                        }
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Source ID'
+                    },
+                    ticks: {
+                        font: {
+                            size: 12
+                        }
+                    }
+                }
+            },
+            layout: {
+                padding: {
+                    left: 20,
+                    right: 20,
+                    top: 20,
+                    bottom: 20
+                }
+            },
+            elements: {
+                bar: {
+                    borderWidth: 0
+                }
+            },
+            barPercentage: 0.6,
+            categoryPercentage: 0.8,
             plugins: {
                 title: {
                     display: true,
@@ -1238,16 +1304,19 @@ function createPieCharts() {
                             return `${context.label}: ${value.toFixed(2)} (${percentage}%)`;
                         }
                     }
+                },
+                legend: {
+                    display: false // Hide legend for bar charts
                 }
             }
         }
     };
     
-    pieChart1 = new Chart(pieCtx1, JSON.parse(JSON.stringify(pieChartConfig)));
-    updatePieChart(pieChart1, sourceVolumes1, 'Ground Truth Emissions');
+    pieChart1 = new Chart(pieCtx1, JSON.parse(JSON.stringify(barChartConfig)));
+    updateBarChart(pieChart1, sourceVolumes1, 'Ground Truth Emissions', sortedSources);
     
-    pieChart2 = new Chart(pieCtx2, JSON.parse(JSON.stringify(pieChartConfig)));
-    updatePieChart(pieChart2, sourceVolumes2, 'Qube');
+    pieChart2 = new Chart(pieCtx2, JSON.parse(JSON.stringify(barChartConfig)));
+    updateBarChart(pieChart2, sourceVolumes2, 'Qube', sortedSources);
 }
 
 // Function to create the charts
@@ -1321,8 +1390,13 @@ function createCharts() {
                 }
             }
             
-            updatePieChart(pieChart1, sourceVolumes1, 'Ground Truth Emissions');
-            updatePieChart(pieChart2, sourceVolumes2, 'Qube');
+            // Sort sources: Ground Truth sources by volume (largest to smallest), then Qube-only sources
+            const groundTruthSources = Object.keys(sourceVolumes1).sort((a, b) => sourceVolumes1[b] - sourceVolumes1[a]);
+            const qubeOnlySources = Object.keys(sourceVolumes2).filter(sourceId => !sourceVolumes1[sourceId]);
+            const sortedSources = [...groundTruthSources, ...qubeOnlySources];
+            
+            updateBarChart(pieChart1, sourceVolumes1, 'Ground Truth Emissions', sortedSources);
+            updateBarChart(pieChart2, sourceVolumes2, 'Qube', sortedSources);
         }
         
         const averageToggle = getElement('averageToggle');
@@ -1380,14 +1454,41 @@ function displayTotalError(errors) {
     const totalError = Math.abs(errors.reduce((sum, error) => sum + error, 0));
     const totalErrorPerHour = totalError / (errors.length);
     const totalErrorPercentage = (totalError / totalVolume) * 100;
-    const totalVolumeReleasedElement = document.getElementById('totalVolumeReleased');
-    const totalVolumePredictedElement = document.getElementById('totalVolumePredicted');
-    const totalErrorElement = document.getElementById('totalError');
-    const totalErrorPercentageElement = document.getElementById('totalErrorPercentage');
-    totalVolumeReleasedElement.textContent = `${totalVolume.toFixed(2)} kg (${totalVolumePerHour.toFixed(2)} kg/h)`;
-    totalVolumePredictedElement.textContent = `${totalQubeVolume.toFixed(2)} kg (${totalQubeVolumePerHour.toFixed(2)} kg/h)`;
-    totalErrorElement.textContent = `${totalError.toFixed(2)} kg (${totalErrorPerHour.toFixed(2)} kg/h)`;
-    totalErrorPercentageElement.textContent = `${totalErrorPercentage.toFixed(2)}%`;
+    
+    // Calculate cumulative volume errors for overall standard deviation
+    const groundTruthData = volumeDatasets.find(d => d.label.includes('Ground Truth'));
+    const qubeData = volumeDatasets.find(d => d.label.includes('Qube'));
+    
+    if (groundTruthData && qubeData) {
+        const cumulativeErrors = [];
+        const numPoints = Math.min(groundTruthData.data.length, qubeData.data.length);
+        
+        for (let i = 0; i < numPoints; i++) {
+            const groundTruthVolume = groundTruthData.data[i].y;
+            const qubeVolume = qubeData.data[i].y;
+            const cumulativeError = qubeVolume - groundTruthVolume;
+            cumulativeErrors.push(cumulativeError);
+        }
+        
+        // Calculate standard deviation of cumulative volume errors (in kg)
+        const meanCumulativeError = cumulativeErrors.reduce((a, b) => a + b, 0) / cumulativeErrors.length;
+        const stdDevCumulativeError = Math.sqrt(cumulativeErrors.reduce((sum, error) => sum + Math.pow(error - meanCumulativeError, 2), 0) / cumulativeErrors.length);
+        const stdDevCumulativeErrorPercentage = (stdDevCumulativeError / totalVolume) * 100;
+        
+        const totalVolumeReleasedElement = document.getElementById('totalVolumeReleased');
+        const totalVolumePredictedElement = document.getElementById('totalVolumePredicted');
+        const totalErrorElement = document.getElementById('totalError');
+        const totalErrorPercentageElement = document.getElementById('totalErrorPercentage');
+        const totalStdDevErrorElement = document.getElementById('totalStdDevError');
+        const totalStdDevErrorPercentElement = document.getElementById('totalStdDevErrorPercent');
+        
+        totalVolumeReleasedElement.textContent = `${totalVolume.toFixed(2)} kg (${totalVolumePerHour.toFixed(2)} kg/h)`;
+        totalVolumePredictedElement.textContent = `${totalQubeVolume.toFixed(2)} kg (${totalQubeVolumePerHour.toFixed(2)} kg/h)`;
+        totalErrorElement.textContent = `${totalError.toFixed(2)} kg (${totalErrorPerHour.toFixed(2)} kg/h)`;
+        totalErrorPercentageElement.textContent = `${totalErrorPercentage.toFixed(2)}%`;
+        totalStdDevErrorElement.textContent = `${stdDevCumulativeError.toFixed(2)} kg (${(stdDevCumulativeError / errors.length).toFixed(2)} kg/h)`;
+        totalStdDevErrorPercentElement.textContent = `${stdDevCumulativeErrorPercentage.toFixed(2)}%`;
+    }
 }
 
 // Function to update volume chart based on current zoom level

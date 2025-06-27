@@ -53,16 +53,19 @@
         }
         #pieChartContainer {
             position: relative;
-            height: 250px;
+            height: 400px;
             width: 100%;
             display: flex;
             justify-content: center;
             gap: 40px;
+            align-items: center;
         }
         #pieChart1, #pieChart2 {
             position: relative;
-            width: 250px !important;
-            height: 250px !important;
+            width: 45% !important;
+            height: 100% !important;
+            max-width: 600px;
+            min-width: 400px;
         }
         #errorContainer {
             position: relative;
@@ -200,6 +203,12 @@
             font-size: 16px;
         }
         .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            min-width: 300px;
+        }
+        .stat-grid-single {
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -353,6 +362,14 @@
                     <span class="stat-label">Total Error Percentage:</span>
                     <span class="stat-value" id="totalErrorPercentage"></span>
                 </div>
+                <div class="stat-item">
+                    <span class="stat-label">Std Dev Error:</span>
+                    <span class="stat-value" id="totalStdDevError">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Std Dev Error %:</span>
+                    <span class="stat-value" id="totalStdDevErrorPercent">-</span>
+                </div>
             </div>
         </div>
         <div id="infoAlert" class="info-box" role="alert">
@@ -364,7 +381,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h3 id="errorTitle">Error Statistics (1-hour sliding window)</h3>
                 </div>
-                <div class="stat-grid">
+                <div class="stat-grid-single">
                     <div class="stat-item">
                         <span class="stat-label">Max Error:</span>
                         <span class="stat-value" id="maxError">-</span>
@@ -372,6 +389,10 @@
                     <div class="stat-item">
                         <span class="stat-label">Mean Error:</span>
                         <span class="stat-value" id="meanError">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Std Dev Error:</span>
+                        <span class="stat-value" id="stdDevError">-</span>
                     </div>
                 </div>
             </div>
