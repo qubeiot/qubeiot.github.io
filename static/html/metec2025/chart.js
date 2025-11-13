@@ -879,7 +879,7 @@ function navigateForward() {
 // Main function to load and process data
 async function loadAndRenderCharts() {
     try {
-        const response = await fetch('data.json');
+        const response = await fetch('https://docs.qubeiot.com/html/metec2025/data.json');
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
