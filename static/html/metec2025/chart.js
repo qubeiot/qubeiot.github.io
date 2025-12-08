@@ -10,24 +10,35 @@ const colorMap = {
 };
 
 // Function to process data and group by source_group
+// Optimized to handle large datasets without stack overflow
 function processData(dataArray) {
     const grouped = {};
+    const length = dataArray.length;
     
-    // Group data by source_group
-    dataArray.forEach(item => {
-        if (!grouped[item.source_group]) {
-            grouped[item.source_group] = [];
+    // Process in chunks to avoid stack overflow
+    const CHUNK_SIZE = 10000;
+    
+    for (let i = 0; i < length; i += CHUNK_SIZE) {
+        const chunk = dataArray.slice(i, Math.min(i + CHUNK_SIZE, length));
+        
+        for (let j = 0; j < chunk.length; j++) {
+            const item = chunk[j];
+            if (!grouped[item.source_group]) {
+                grouped[item.source_group] = [];
+            }
+            grouped[item.source_group].push({
+                x: new Date(item.time),
+                y: item.rate_kg_per_hr
+            });
         }
-        grouped[item.source_group].push({
-            x: new Date(item.time),
-            y: item.rate_kg_per_hr
-        });
-    });
+    }
     
     // Sort each group by time
-    Object.keys(grouped).forEach(sourceGroup => {
+    const sourceGroups = Object.keys(grouped);
+    for (let i = 0; i < sourceGroups.length; i++) {
+        const sourceGroup = sourceGroups[i];
         grouped[sourceGroup].sort((a, b) => a.x - b.x);
-    });
+    }
     
     return grouped;
 }
@@ -145,7 +156,12 @@ function renderChart(canvasId, datasets, title, initialMin = undefined, initialM
                     position: 'top',
                     labels: {
                         usePointStyle: true,
-                        padding: 15
+                        padding: 15,
+                        filter: function(item, chart) {
+                            // Hide legend items that end with -c1 through -c6
+                            const label = item.text;
+                            return !/-c[1-6]$/.test(label);
+                        }
                     }
                 },
                 tooltip: {
@@ -245,17 +261,27 @@ function renderChart(canvasId, datasets, title, initialMin = undefined, initialM
 }
 
 // Function to create and render cumulative volume chart
-function renderCumulativeChart(groundTruthData, predictedData) {
+function renderCumulativeChart(groundTruthUnfiltered, groundTruthFiltered, predictedData) {
     const ctx = document.getElementById('cumulative-plot').getContext('2d');
     return new Chart(ctx, {
         type: 'line',
         data: {
             datasets: [
                 {
-                    label: 'Ground Truth',
-                    data: groundTruthData,
-                    borderColor: '#36A2EB',
-                    backgroundColor: '#36A2EB30',
+                    label: 'Ground Truth (unfiltered)',
+                    data: groundTruthUnfiltered,
+                    borderColor: '#808080', // Grey
+                    backgroundColor: '#80808030',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 0
+                },
+                {
+                    label: 'Ground Truth (emissions > 0.2 kg/hr)',
+                    data: groundTruthFiltered,
+                    borderColor: '#FF6384', // Red
+                    backgroundColor: '#FF638430',
                     borderWidth: 2,
                     fill: false,
                     tension: 0.1,
@@ -264,8 +290,8 @@ function renderCumulativeChart(groundTruthData, predictedData) {
                 {
                     label: 'Predicted',
                     data: predictedData,
-                    borderColor: '#FF6384',
-                    backgroundColor: '#FF638430',
+                    borderColor: '#4BC0C0', // Green
+                    backgroundColor: '#4BC0C030',
                     borderWidth: 2,
                     fill: false,
                     tension: 0.1,
@@ -277,7 +303,7 @@ function renderCumulativeChart(groundTruthData, predictedData) {
             responsive: true,
             maintainAspectRatio: false,
             interaction: {
-                mode: 'index',
+                mode: false,
                 intersect: false
             },
             plugins: {
@@ -297,14 +323,7 @@ function renderCumulativeChart(groundTruthData, predictedData) {
                     }
                 },
                 tooltip: {
-                    callbacks: {
-                        title: function(context) {
-                            return new Date(context[0].parsed.x).toLocaleString();
-                        },
-                        label: function(context) {
-                            return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' kg';
-                        }
-                    }
+                    enabled: false
                 }
             },
             scales: {
@@ -322,7 +341,8 @@ function renderCumulativeChart(groundTruthData, predictedData) {
                     },
                     grid: {
                         color: '#e0e0e0'
-                    }
+                    },
+                    min: new Date('2025-04-01T00:00:00Z')
                 },
                 y: {
                     title: {
@@ -340,27 +360,35 @@ function renderCumulativeChart(groundTruthData, predictedData) {
 }
 
 // Function to calculate histogram data - bucket volumes by release rates
+// Optimized to handle large datasets without stack overflow
 function calculateRateHistogram(dataArray, rateThreshold = 0) {
     // Collect all rate values and calculate volumes
     const rateVolumePairs = [];
+    const length = dataArray.length;
     
-    dataArray.forEach(item => {
+    // Process in chunks to avoid stack overflow
+    for (let i = 0; i < length; i++) {
+        const item = dataArray[i];
         // Apply threshold filter: only include if rate >= threshold
         if (item.rate_kg_per_hr >= rateThreshold) {
             const rate = item.rate_kg_per_hr;
             const volume = rate * INTERVAL_HOURS; // Volume for this 15-minute interval
             rateVolumePairs.push({ rate, volume });
         }
-    });
+    }
     
     if (rateVolumePairs.length === 0) {
         return { bins: [], labels: [] };
     }
     
-    // Find min and max rates
-    const rates = rateVolumePairs.map(p => p.rate);
-    const minRate = Math.min(...rates);
-    const maxRate = Math.max(...rates);
+    // Find min and max rates - avoid spread operator on large arrays
+    let minRate = Infinity;
+    let maxRate = -Infinity;
+    for (let i = 0; i < rateVolumePairs.length; i++) {
+        const rate = rateVolumePairs[i].rate;
+        if (rate < minRate) minRate = rate;
+        if (rate > maxRate) maxRate = rate;
+    }
     
     // Create bins - use 20 bins or adjust based on data range
     const numBins = 20;
@@ -375,7 +403,8 @@ function calculateRateHistogram(dataArray, rateThreshold = 0) {
     }));
     
     // Populate bins with volumes
-    rateVolumePairs.forEach(({ rate, volume }) => {
+    for (let i = 0; i < rateVolumePairs.length; i++) {
+        const { rate, volume } = rateVolumePairs[i];
         const binIndex = Math.min(
             Math.floor((rate - minRate) / binWidth),
             numBins - 1
@@ -383,187 +412,23 @@ function calculateRateHistogram(dataArray, rateThreshold = 0) {
         if (binIndex >= 0 && binIndex < numBins) {
             bins[binIndex].volume += volume;
         }
-    });
+    }
     
     // Create labels and data arrays
-    const labels = bins.map(bin => bin.center.toFixed(2));
-    const volumes = bins.map(bin => bin.volume);
+    const labels = [];
+    const volumes = [];
+    for (let i = 0; i < bins.length; i++) {
+        labels.push(bins[i].center.toFixed(2));
+        volumes.push(bins[i].volume);
+    }
     
     return { bins, labels, volumes };
-}
-
-// Function to create and render rate histogram chart
-function renderRateHistogram(groundTruthData, predictedData, rateThreshold = 0) {
-    const ctx = document.getElementById('rate-histogram-plot').getContext('2d');
-    
-    // Collect all rate values from both datasets to determine unified bin ranges
-    const allRates = [];
-    groundTruthData.forEach(item => {
-        if (item.rate_kg_per_hr >= rateThreshold) {
-            allRates.push(item.rate_kg_per_hr);
-        }
-    });
-    predictedData.forEach(item => {
-        if (item.rate_kg_per_hr >= rateThreshold) {
-            allRates.push(item.rate_kg_per_hr);
-        }
-    });
-    
-    if (allRates.length === 0) {
-        // No data to display
-        if (rateHistogramChart) {
-            rateHistogramChart.destroy();
-            rateHistogramChart = null;
-        }
-        return;
-    }
-    
-    // Find min and max rates across both datasets
-    const minRate = Math.min(...allRates);
-    const maxRate = Math.max(...allRates);
-    
-    // Use fixed bin width of 2 kg/hr
-    const binWidth = 2.0;
-    
-    // Calculate number of bins needed (round up to cover max rate)
-    // Start from 0, so bins are: 0-2, 2-4, 4-6, etc.
-    const numBins = Math.ceil((maxRate + binWidth) / binWidth);
-    
-    // Initialize bins starting from 0
-    // Bins: 0-2, 2-4, 4-6, 6-8, etc.
-    const bins = Array(numBins).fill(0).map((_, i) => ({
-        start: i * binWidth,
-        end: (i + 1) * binWidth,
-        center: (i + 0.5) * binWidth,
-        gtVolume: 0,
-        predVolume: 0
-    }));
-    
-    // Populate bins with ground truth volumes
-    groundTruthData.forEach(item => {
-        if (item.rate_kg_per_hr >= rateThreshold) {
-            const rate = item.rate_kg_per_hr;
-            const volume = rate * INTERVAL_HOURS;
-            // Calculate bin index: rate falls into bin floor(rate / binWidth)
-            const binIndex = Math.min(
-                Math.floor(rate / binWidth),
-                numBins - 1
-            );
-            if (binIndex >= 0 && binIndex < numBins) {
-                bins[binIndex].gtVolume += volume;
-            }
-        }
-    });
-    
-    // Populate bins with predicted volumes
-    predictedData.forEach(item => {
-        if (item.rate_kg_per_hr >= rateThreshold) {
-            const rate = item.rate_kg_per_hr;
-            const volume = rate * INTERVAL_HOURS;
-            // Calculate bin index: rate falls into bin floor(rate / binWidth)
-            const binIndex = Math.min(
-                Math.floor(rate / binWidth),
-                numBins - 1
-            );
-            if (binIndex >= 0 && binIndex < numBins) {
-                bins[binIndex].predVolume += volume;
-            }
-        }
-    });
-    
-    // Create labels and data arrays - use right edge of bucket for labels
-    const labels = bins.map(bin => bin.end.toFixed(0));
-    const gtVolumes = bins.map(bin => bin.gtVolume);
-    const predVolumes = bins.map(bin => bin.predVolume);
-    
-    // Destroy existing chart if it exists
-    if (rateHistogramChart) {
-        rateHistogramChart.destroy();
-    }
-    
-    rateHistogramChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Ground Truth',
-                    data: gtVolumes,
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)', // Blue with opacity
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 4
-                },
-                {
-                    label: 'Predicted',
-                    data: predVolumes,
-                    backgroundColor: 'rgba(255, 99, 132, 0.6)', // Red with opacity
-                    borderColor: 'rgba(255, 99, 132, 1)',
-                    borderWidth: 4
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Volume Distribution by Release Rate',
-                    font: {
-                        size: 16
-                    }
-                },
-                legend: {
-                    display: true,
-                    position: 'top',
-                    labels: {
-                        usePointStyle: true,
-                        padding: 15
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        title: function(context) {
-                            const binIndex = context[0].dataIndex;
-                            const bin = bins[binIndex];
-                            return `Rate: ${bin.start.toFixed(2)} - ${bin.end.toFixed(2)} kg/hr`;
-                        },
-                        label: function(context) {
-                            return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' kg';
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Release Rate (kg/hr)'
-                    },
-                    grid: {
-                        color: '#e0e0e0'
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Volume (kg)'
-                    },
-                    grid: {
-                        color: '#e0e0e0'
-                    },
-                    beginAtZero: true
-                }
-            }
-        }
-    });
 }
 
 // Store chart instances and time range
 let groundTruthChart = null;
 let predictedChart = null;
 let cumulativeChart = null;
-let rateHistogramChart = null;
 let currentStartTime = null;
 let dataMinTime = null;
 let dataMaxTime = null;
@@ -572,6 +437,7 @@ let predictedGrouped = null;
 let groundTruthRawData = null; // Store raw data for recalculation
 let predictedRawData = null; // Store predicted raw data for histogram
 let predictedCumulativeData = null; // Store predicted cumulative data
+let groundTruthCumulativeUnfiltered = null; // Store unfiltered ground truth cumulative data
 const INTERVAL_HOURS = 0.25; // 15 minutes = 0.25 hours
 
 // Function to get the start of the half-month period containing a date
@@ -640,14 +506,19 @@ function getNextHalfMonth(date) {
 }
 
 // Function to get the earliest 00:00 UTC time from data
+// Optimized to avoid stack overflow with large arrays
 function getEarliestMidnightUTC(dataArray) {
     let earliest = null;
-    dataArray.forEach(item => {
-        const date = new Date(item.time);
+    const length = dataArray.length;
+    
+    // Process in chunks to avoid stack overflow
+    for (let i = 0; i < length; i++) {
+        const date = new Date(dataArray[i].time);
         if (!earliest || date < earliest) {
             earliest = date;
         }
-    });
+    }
+    
     if (earliest) {
         // Round down to 00:00 UTC
         const utcDate = new Date(Date.UTC(
@@ -662,42 +533,82 @@ function getEarliestMidnightUTC(dataArray) {
 }
 
 // Function to get the latest time from data
+// Optimized to avoid stack overflow with large arrays
 function getLatestTime(dataArray) {
     let latest = null;
-    dataArray.forEach(item => {
-        const date = new Date(item.time);
+    const length = dataArray.length;
+    
+    // Process in chunks to avoid stack overflow
+    for (let i = 0; i < length; i++) {
+        const date = new Date(dataArray[i].time);
         if (!latest || date > latest) {
             latest = date;
         }
-    });
+    }
     return latest;
 }
 
 // Function to calculate cumulative volume from total rates
+// Filters at the individual source rate level (each item represents one source_group at one time)
+// Only includes individual source rates >= threshold, then sums them at each time point
+// Optimized to handle large datasets without stack overflow
 function calculateCumulativeVolume(dataArray, rateThreshold = 1) {
-    // First, get all unique time points and calculate total rate at each
-    // Filter out source groups with rate below threshold
+    // Start date for cumulative volume calculation
+    const startDate = new Date('2025-04-01T00:00:00Z');
+    const startDateTimestamp = startDate.getTime();
+    
+    // Filter individual source rates first, then sum at each time point
+    // Each item in dataArray represents one source_group's rate at one time point
     const timePoints = {};
     
-    dataArray.forEach(item => {
-        // Apply threshold filter: only include if rate >= threshold
+    // Pre-filter and process data more efficiently
+    // Process in chunks to avoid stack overflow
+    const length = dataArray.length;
+    for (let i = 0; i < length; i++) {
+        const item = dataArray[i];
+        // Filter at individual source rate level: only include if this source's rate >= threshold
         if (item.rate_kg_per_hr >= rateThreshold) {
-            const time = item.time;
-            if (!timePoints[time]) {
-                timePoints[time] = 0;
+            // Convert time to timestamp for efficient comparison
+            const itemTimeTimestamp = new Date(item.time).getTime();
+            // Apply date filter: only include if time >= start date
+            if (itemTimeTimestamp >= startDateTimestamp) {
+                const time = item.time;
+                if (!timePoints[time]) {
+                    timePoints[time] = 0;
+                }
+                // Sum the filtered individual source rates at each time point
+                timePoints[time] += item.rate_kg_per_hr;
             }
-            timePoints[time] += item.rate_kg_per_hr;
         }
-    });
+    }
     
-    // Sort time points as dates (not strings) to ensure proper chronological order
-    const sortedTimes = Object.keys(timePoints).sort((a, b) => {
-        return new Date(a).getTime() - new Date(b).getTime();
-    });
+    // Sort time points using numeric timestamps for better performance
+    // Convert to array of [timeString, timestamp] pairs, sort by timestamp, then extract time strings
+    // Process in chunks to avoid stack overflow
+    const timeKeys = Object.keys(timePoints);
+    const timeEntries = [];
+    for (let i = 0; i < timeKeys.length; i++) {
+        const timeStr = timeKeys[i];
+        timeEntries.push({
+            timeStr: timeStr,
+            timestamp: new Date(timeStr).getTime()
+        });
+    }
+    timeEntries.sort((a, b) => a.timestamp - b.timestamp);
+    const sortedTimes = [];
+    for (let i = 0; i < timeEntries.length; i++) {
+        sortedTimes.push(timeEntries[i].timeStr);
+    }
     
     // Calculate cumulative volume using trapezoidal rule
     let cumulativeVolume = 0;
     const cumulativeData = [];
+    
+    // Add starting point at April 1st, 2025 with cumulative volume 0
+    cumulativeData.push({
+        x: startDate,
+        y: 0
+    });
     
     for (let i = 0; i < sortedTimes.length; i++) {
         const time = new Date(sortedTimes[i]);
@@ -705,10 +616,14 @@ function calculateCumulativeVolume(dataArray, rateThreshold = 1) {
         
         // Calculate volume increment using trapezoidal rule
         if (i === 0) {
-            // First point: assume rate is constant for half interval before
-            cumulativeVolume = rate * (INTERVAL_HOURS / 2);
+            // First data point after start date: use trapezoidal rule from start date (rate = 0) to this point
+            const timeDiff = (time.getTime() - startDate.getTime()) / (1000 * 60 * 60); // hours
+            // Use trapezoidal rule: average of 0 (start date) and current rate
+            const avgRate = (0 + rate) / 2;
+            cumulativeVolume = avgRate * timeDiff;
         } else {
             // Use trapezoidal rule: average of previous and current rate
+            // Use INTERVAL_HOURS for regular 15-minute intervals between data points
             const prevRate = timePoints[sortedTimes[i - 1]];
             const avgRate = (prevRate + rate) / 2;
             const volumeIncrement = avgRate * INTERVAL_HOURS;
@@ -742,11 +657,11 @@ function updateCumulativeChart(threshold) {
     // Recalculate ground truth cumulative with threshold filter
     const groundTruthCumulative = calculateCumulativeVolume(groundTruthRawData, threshold);
     
-    // Update chart data
-    cumulativeChart.data.datasets[0].data = groundTruthCumulative;
+    // Update chart data - dataset[0] is unfiltered (grey), dataset[1] is filtered (red)
+    cumulativeChart.data.datasets[1].data = groundTruthCumulative;
     cumulativeChart.update('none');
     
-    // Calculate and update error metrics
+    // Calculate and update error metrics using filtered ground truth
     const groundTruthFinal = getFinalCumulativeVolume(groundTruthCumulative);
     const predictedFinal = getFinalCumulativeVolume(predictedCumulativeData);
     const errorKg = predictedFinal - groundTruthFinal;
@@ -876,22 +791,119 @@ function navigateForward() {
     }
 }
 
+// Function to decompress data if it's in compressed format
+// Compressed format uses arrays: [time, source_group, rate_kg_per_hr]
+function decompressData(data) {
+    // Check if data is in compressed format (has 'gt' and 'p' keys instead of 'ground_truth' and 'predicted')
+    if (data.gt && data.p) {
+        // Convert compressed format to original format
+        return {
+            ground_truth: data.gt.map(item => ({
+                time: item[0],
+                source_group: item[1],
+                rate_kg_per_hr: item[2]
+            })),
+            predicted: data.p.map(item => ({
+                time: item[0],
+                source_group: item[1],
+                rate_kg_per_hr: item[2]
+            }))
+        };
+    }
+    // Already in original format
+    return data;
+}
+
+// Function to decompress gzip data client-side
+async function decompressGzip(arrayBuffer) {
+    // Check if browser supports DecompressionStream (modern browsers)
+    if (typeof DecompressionStream !== 'undefined') {
+        const stream = new DecompressionStream('gzip');
+        const writer = stream.writable.getWriter();
+        const reader = stream.readable.getReader();
+        
+        // Write the compressed data
+        writer.write(new Uint8Array(arrayBuffer));
+        writer.close();
+        
+        // Read the decompressed data
+        const chunks = [];
+        let done = false;
+        while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            if (value) {
+                chunks.push(value);
+            }
+        }
+        
+        // Combine chunks into a single Uint8Array
+        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.length;
+        }
+        
+        // Convert to text
+        return new TextDecoder().decode(result);
+    } else {
+        // Fallback: try using pako library if available, or throw error
+        throw new Error('Browser does not support DecompressionStream. Please use a modern browser or serve the file with Content-Encoding: gzip header on the server.');
+    }
+}
+
 // Main function to load and process data
 async function loadAndRenderCharts() {
     try {
-        const response = await fetch('https://docs.qubeiot.com/html/metec2025/data.json');
+        const response = await fetch('data.min.json.gz');
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const data = await response.json();
+        
+        let text;
+        
+        // Check if server already decompressed it (Content-Encoding header)
+        const contentEncoding = response.headers.get('Content-Encoding');
+        if (contentEncoding && contentEncoding.toLowerCase().includes('gzip')) {
+            // Server handled decompression, just get text
+            text = await response.text();
+        } else {
+            // Need to decompress client-side
+            const arrayBuffer = await response.arrayBuffer();
+            text = await decompressGzip(arrayBuffer);
+        }
+        
+        // Parse JSON
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (parseError) {
+            // If JSON.parse still fails, try parsing in chunks using a streaming approach
+            throw new Error(`Failed to parse JSON: ${parseError.message}`);
+        }
+        
+        // Decompress data if it's in compressed format
+        data = decompressData(data);
         
         // Hide loading message
         document.getElementById('loading').style.display = 'none';
         
         // Find the earliest 00:00 UTC and latest time from all data
-        const allData = [...(data.ground_truth || []), ...(data.predicted || [])];
-        dataMinTime = getEarliestMidnightUTC(allData);
-        dataMaxTime = getLatestTime(allData);
+        // Avoid using spread operator on large arrays to prevent stack overflow
+        const groundTruth = data.ground_truth || [];
+        const predicted = data.predicted || [];
+        
+        // Process both arrays separately to find min/max
+        const gtMin = getEarliestMidnightUTC(groundTruth);
+        const predMin = getEarliestMidnightUTC(predicted);
+        const gtMax = getLatestTime(groundTruth);
+        const predMax = getLatestTime(predicted);
+        
+        // Find overall min and max
+        dataMinTime = gtMin && predMin ? (gtMin < predMin ? gtMin : predMin) : (gtMin || predMin);
+        dataMaxTime = gtMax && predMax ? (gtMax > predMax ? gtMax : predMax) : (gtMax || predMax);
         
         if (!dataMinTime) {
             throw new Error('No valid time data found');
@@ -917,7 +929,6 @@ async function loadAndRenderCharts() {
         document.getElementById('ground-truth-chart').style.display = 'block';
         document.getElementById('predicted-chart').style.display = 'block';
         document.getElementById('cumulative-chart').style.display = 'block';
-        document.getElementById('rate-histogram-chart').style.display = 'block';
         document.getElementById('navigation-container').style.display = 'flex';
         
         // Calculate initial time range - start with second half-month period
@@ -933,27 +944,21 @@ async function loadAndRenderCharts() {
         // Update time range display and navigation buttons
         updateTimeRange(initialStartTime);
         
-        // Add event listener for threshold slider
-        const slider = document.getElementById('rate-threshold-slider');
+        // Use fixed threshold value (0.2 kg/hr)
+        const fixedThreshold = 0.2;
         const thresholdDisplay = document.getElementById('threshold-value');
-        const initialThreshold = parseFloat(slider.value);
+        thresholdDisplay.textContent = fixedThreshold.toFixed(1);
         
-        // Calculate and render cumulative volume chart with initial threshold
-        const groundTruthCumulative = calculateCumulativeVolume(groundTruthRawData, initialThreshold);
+        // Calculate and render cumulative volume chart with fixed threshold
+        // Calculate unfiltered ground truth (threshold = 0)
+        groundTruthCumulativeUnfiltered = calculateCumulativeVolume(groundTruthRawData, 0);
+        // Calculate filtered ground truth with fixed threshold
+        const groundTruthCumulative = calculateCumulativeVolume(groundTruthRawData, fixedThreshold);
         predictedCumulativeData = calculateCumulativeVolume(data.predicted || [], 0);
-        cumulativeChart = renderCumulativeChart(groundTruthCumulative, predictedCumulativeData);
-        
-        // Create histogram with no threshold filtering (threshold = 0)
-        renderRateHistogram(groundTruthRawData, predictedRawData, 0);
+        cumulativeChart = renderCumulativeChart(groundTruthCumulativeUnfiltered, groundTruthCumulative, predictedCumulativeData);
         
         // Calculate and display initial error metrics
-        updateCumulativeChart(initialThreshold);
-        
-        slider.addEventListener('input', function(e) {
-            const threshold = parseFloat(e.target.value);
-            thresholdDisplay.textContent = threshold.toFixed(1);
-            updateCumulativeChart(threshold);
-        });
+        updateCumulativeChart(fixedThreshold);
         
         // Add event listeners for navigation buttons
         document.getElementById('prev-button').addEventListener('click', navigateBackward);

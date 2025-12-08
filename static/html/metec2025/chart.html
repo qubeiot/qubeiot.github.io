@@ -161,17 +161,16 @@
         </div>
         
         <div id="cumulative-chart" class="chart-container" style="display: none;">
-            <div class="chart-title">Cumulative Volume</div>
+            <div class="chart-title" style="margin-top: 60px;">Cumulative Volume</div>
             <div class="description">Predicted volume was nearly 30% lower than the ground truth releases over the 16 week period. However, a significant portion of the released volume was low-rate long duration emissions released concurrently with upwards of 5 leak sources active at one time. Given the complexity of the releases, quantification of rates lower than 1 kg/hr proved to be beyond the limits of a fenceline only technology.</div>
             <div class="filter-controls" style="margin-bottom: 15px;">
                 <div style="margin-bottom: 10px;">
-                    <label for="rate-threshold-slider" style="display: inline-block; margin-right: 10px; color: #666;">
+                    <label style="display: inline-block; margin-right: 10px; color: #666;">
                         Exclude rates below:
                     </label>
-                    <span id="threshold-value" style="color: #333; font-weight: bold;">1.0</span>
+                    <span id="threshold-value" style="color: #333; font-weight: bold;">0.2</span>
                     <span style="color: #666;">kg/hr</span>
-                    <input type="range" id="rate-threshold-slider" min="0" max="1" step="0.2" value="1" 
-                           style="width: 200px; margin-left: 10px;">
+
                     
                 </div>
                 <div id="error-metrics" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
@@ -186,11 +185,6 @@
                 </div>
             </div>
             <canvas id="cumulative-plot"></canvas>
-        </div>
-        
-        <div id="rate-histogram-chart" class="chart-container" style="display: none; margin-top: 250px;">
-            <div class="chart-title">Volume Distribution by Release Rate</div>
-            <canvas id="rate-histogram-plot"></canvas>
         </div>
     </div>
 
