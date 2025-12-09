@@ -11,14 +11,16 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
+            padding-left: 5px;
+            padding-right: 5px;
+            background-color: #ffffff;
         }
         .container {
             max-width: 1400px;
             margin: 0 auto;
             background-color: white;
             padding: 30px;
-            padding-bottom: 200px;
+            padding-bottom: 220px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
@@ -31,6 +33,11 @@
             text-align: center;
             color: #666;
             margin-bottom: 30px;
+        }
+        .timeline-chart-container {
+            margin: 20px;
+            position: relative;
+            height: 300px;
         }
         .chart-container {
             margin: 20px;
@@ -150,12 +157,12 @@
         <div id="loading" class="loading">Loading data...</div>
         <div id="error" class="error" style="display: none;"></div>
         
-        <div id="ground-truth-chart" class="chart-container" style="display: none;">
+        <div id="ground-truth-chart" class="timeline-chart-container" style="display: none;">
             <div class="chart-title"></div>
             <canvas id="ground-truth-plot"></canvas>
         </div>
         
-        <div id="predicted-chart" class="chart-container" style="display: none;">
+        <div id="predicted-chart" class="timeline-chart-container" style="display: none;">
             <div class="chart-title"></div>
             <canvas id="predicted-plot"></canvas>
         </div>
